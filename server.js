@@ -61,12 +61,19 @@ try { mongoClient = require('./utils/mongoClient'); } catch (e) { mongoClient = 
 // --- helper obtainDb for in-file small endpoints (supports mongoClient.getDb() or .db) ---
 async function obtainDb() {
   if (!mongoClient) return null;
-  if (typeof mongoClient.getDb === 'function') {
-    return await mongoClient.getDb();
+
+  try {
+    if (typeof mongoClient.getDb === 'function') {
+      return mongoClient.getDb(); // sync, may throw
+    }
+    if (mongoClient.db) return mongoClient.db;
+    return null;
+  } catch (err) {
+    console.warn('[obtainDb] Mongo not ready:', err.message);
+    return null;
   }
-  if (mongoClient.db) return mongoClient.db;
-  return null;
 }
+
 
 // --- Routes ---
 // Load core routers (some may be SQL or Mongo variants)

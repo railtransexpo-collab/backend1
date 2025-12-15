@@ -19,10 +19,14 @@ const DEFAULT_EXHIBITOR_FIELDS = [
 
 async function obtainDb() {
   if (!mongo) return null;
-  if (typeof mongo.getDb === 'function') return await mongo.getDb();
+  if (typeof mongo.getDb === 'function') {
+    const db = await mongo.getDb();
+    return db;
+  }
   if (mongo.db) return mongo.db;
   return null;
 }
+
 
 function canonicalizeConfig(cfg = {}) {
   const config = { ...(typeof cfg === 'object' && cfg !== null ? cfg : {}) };

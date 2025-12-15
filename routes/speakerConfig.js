@@ -26,6 +26,7 @@ async function obtainDb() {
   return null;
 }
 
+
 /**
  * Normalize admin config into a stable canonical shape used by the UI and stored in DB.
  * - Ensures fields array is normalized (name, label, type, options, visible, required)
