@@ -32,14 +32,16 @@ function mapTargetCollection(collectionName) {
   const name = (collectionName || '').toString().trim().toLowerCase();
   const singular = name.endsWith('s') ? name.slice(0, -1) : name;
 
-  const known = new Set(['visitors','exhibitors','partners','speakers','awardees','registrant']); // singulars
+  const knownRoles = new Set(['visitor','exhibitor','partner','speaker','awardee']);
+
   if (!name) return { target: 'registrants', role: 'visitor' };
-  if (singular === 'registrant' || name === 'registrants') return { target: 'registrants', role: 'visitor' };
-  if (known.has(singular)) {
-    return { target: 'registrants', role: singular };
-  }
+  if (name === 'registrants' || singular === 'registrant') return { target: 'registrants', role: 'visitor' };
+  if (knownRoles.has(singular)) return { target: 'registrants', role: singular };
+
+  // fallback: keep original name
   return { target: name, role: null };
 }
+
 
 
 /* ---------------- utilities ---------------- */

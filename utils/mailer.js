@@ -45,20 +45,19 @@ function parseMailFrom(envFrom, envName) {
     }
   }
 
- if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-  console.warn(`[mailer] Invalid MAIL_FROM email "${email}"`);
-  if (SMTP_USER && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(SMTP_USER)) {
-    email = SMTP_USER;
-  } else {
-    throw new Error("No valid sender email configured");
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    console.warn(`[mailer] Invalid MAIL_FROM email "${email}"`);
+    if (SMTP_USER && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(SMTP_USER)) {
+      email = SMTP_USER;
+    } else {
+      throw new Error("No valid sender email configured");
+    }
   }
-}
-
 
   return { email, name };
 }
 
-/* --- Build nodemailer transporter (same logic as before) --- */
+/* --- Build nodemailer transporter --- */
 function buildTransporter() {
   if (SMTP_HOST) {
     const port = Number(SMTP_PORT || 587);
@@ -69,8 +68,7 @@ function buildTransporter() {
       secure,
       auth: { user: SMTP_USER, pass: SMTP_PASS },
       pool: true,
-     tls: { rejectUnauthorized: process.env.NODE_ENV !== "production" ? false : true },
-
+      tls: { rejectUnauthorized: process.env.NODE_ENV === "production" ? true : false },
     });
   }
   if (SMTP_SERVICE) {
@@ -80,17 +78,10 @@ function buildTransporter() {
       pool: true,
     });
   }
-  // If no SMTP config, return a stub transporter that throws on sendMail
-  return {
-    async sendMail() {
-      throw new Error(
-        "SMTP not configured. Set SMTP_HOST/SMTP_USER/SMTP_PASS or SMTP_SERVICE."
-      );
-    },
-    verify(cb) {
-      cb && cb(new Error("SMTP not configured"));
-    },
-  };
+
+  // Fallback: jsonTransport for development/testing instead of throwing
+  // This allows sendMail to be called in dev without SMTP configured.
+  return nodemailer.createTransport({ jsonTransport: true });
 }
 
 const transporter = buildTransporter();
@@ -128,6 +119,16 @@ function attachmentsMeta(attachments = []) {
 }
 
 /**
+ * Heuristic: does this string look like base64?
+ */
+function looksLikeBase64(s = "") {
+  if (typeof s !== "string") return false;
+  const t = s.replace(/\s+/g, "");
+  // Basic length and charset check
+  return t.length >= 8 && t.length % 4 === 0 && /^[A-Za-z0-9+/=]+$/.test(t);
+}
+
+/**
  * sendMail({ to, subject, text, html, attachments })
  * Sends email via nodemailer and logs the attempt into MongoDB mail_logs collection.
  * Returns { success: boolean, info?, error?, dbRecordId? }
@@ -141,6 +142,19 @@ async function sendMail(opts = {}) {
   const fromHeader = FROM_INFO.name ? `${FROM_INFO.name} <${FROM_INFO.email}>` : FROM_INFO.email;
   const envelopeFrom = FROM_INFO.email;
 
+  // Normalize attachments for nodemailer: ensure base64 strings get encoding set
+  const normalizedAttachments = (opts.attachments || []).map(a => {
+    const out = {};
+    if (a.filename) out.filename = a.filename;
+    if (a.path) out.path = a.path;
+    if (a.content) out.content = a.content;
+    if (a.contentType) out.contentType = a.contentType;
+    // if encoding explicitly provided, honor it; otherwise detect base64
+    if (a.encoding) out.encoding = a.encoding;
+    else if (typeof a.content === "string" && looksLikeBase64(a.content)) out.encoding = "base64";
+    return out;
+  });
+
   const message = {
     from: fromHeader,
     to: Array.isArray(to) ? to.join(", ") : to,
@@ -148,15 +162,7 @@ async function sendMail(opts = {}) {
     text: opts.text || undefined,
     html: opts.html || undefined,
     replyTo: MAIL_REPLYTO || FROM_INFO.email,
-    attachments: (opts.attachments || []).map(a => {
-      const out = {};
-      if (a.filename) out.filename = a.filename;
-      if (a.path) out.path = a.path;
-      if (a.content) out.content = a.content;
-      if (a.encoding) out.encoding = a.encoding;
-      if (a.contentType) out.contentType = a.contentType;
-      return out;
-    }) || undefined,
+    attachments: normalizedAttachments.length ? normalizedAttachments : undefined,
     envelope: { from: envelopeFrom, to: Array.isArray(to) ? to : [to] },
   };
 

@@ -89,20 +89,27 @@ async function ensureTicketCodeUniqueIndex(dbOrName, maybeCollectionName) {
  */
 async function syncFieldsToCollection(collectionName, fields = []) {
   if (!collectionName) throw new Error('collectionName required');
+
   const db = await obtainDb();
   const tracker = await ensureTrackingCollection(db);
-  const targetCol = db.collection(collectionName);
+
+  const { target } = mapTargetCollection(collectionName);
+  const targetCol = db.collection(target);
 
   const desired = [];
-  for (const f of (fields || [])) {
+  for (const f of fields || []) {
     if (!f || !f.name) continue;
     const fn = safeFieldName(f.name);
     if (!fn) continue;
-    desired.push({ fieldName: fn, origName: String(f.name), type: String((f.type || 'text')) });
+    desired.push({
+      fieldName: fn,
+      origName: String(f.name),
+      type: String(f.type || 'text'),
+    });
   }
 
   // load tracked fields for this collection
-  const trackedRows = await tracker.find({ collectionName }).toArray();
+  const trackedRows = await tracker.find({ collectionName: target }).toArray();
   const tracked = trackedRows.map(r => ({ fieldName: r.fieldName, origName: r.origName, _id: r._id }));
 
   const trackedNames = new Set(tracked.map(t => t.fieldName));
