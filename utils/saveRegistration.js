@@ -29,18 +29,18 @@ function singularizeRole(collName = '') {
 }
 
 function mapTargetCollection(collectionName) {
-  // We centralize most registration-like collections into 'registrants'
-  // and set role to the singular of collectionName (visitor, exhibitor, speaker, partner, awardee).
-  const known = new Set(['visitors','exhibitors','partners','speakers','awardees','registrants']);
   const name = (collectionName || '').toString().trim().toLowerCase();
+  const singular = name.endsWith('s') ? name.slice(0, -1) : name;
+
+  const known = new Set(['visitor','exhibitor','partner','speaker','awardee','registrant']); // singulars
   if (!name) return { target: 'registrants', role: 'visitor' };
-  if (name === 'registrants') return { target: 'registrants', role: 'visitor' };
-  if (known.has(name)) {
-    return { target: 'registrants', role: singularizeRole(name) };
+  if (singular === 'registrant' || name === 'registrants') return { target: 'registrants', role: 'visitor' };
+  if (known.has(singular)) {
+    return { target: 'registrants', role: singular };
   }
-  // For other collection names (e.g. tickets) keep them as-is
   return { target: name, role: null };
 }
+
 
 /* ---------------- utilities ---------------- */
 
