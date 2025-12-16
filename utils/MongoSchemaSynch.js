@@ -1,11 +1,8 @@
 /**
  * utils/mongoSchemaSync.js
  *
- * - Provides safeFieldName normalization function.
- * - Tracks dynamic fields in "dynamic_fields" collection.
- * - Creates per-collection indexes for dynamic fields.
- *
- * Note: This module is self-contained and does NOT import registrations (avoids circular deps).
+ * Tracks dynamic fields and creates per-collection indexes.
+ * Does NOT require registrations to avoid circular dependency.
  */
 
 const mongo = require('./mongoClient');
@@ -33,13 +30,8 @@ async function obtainDb() {
 async function ensureTrackingCollection(db) {
   const col = db.collection('dynamic_fields');
   try {
-    await col.createIndex(
-      { collectionName: 1, fieldName: 1 },
-      { unique: true, background: true }
-    );
-  } catch (e) {
-    // ignore
-  }
+    await col.createIndex({ collectionName: 1, fieldName: 1 }, { unique: true, background: true });
+  } catch (e) {}
   return col;
 }
 
@@ -51,15 +43,6 @@ function normalizeCollectionNameToPlural(collectionName) {
   return s;
 }
 
-/**
- * syncFieldsToCollection(collectionName, fields = [])
- * - collectionName: logical collection (visitor(s), exhibitor(s), partner(s), etc.)
- * - fields: array of { name, type }
- *
- * Behavior:
- * - Normalizes collectionName to plural form and applies indexes to that physical collection.
- * - Records tracked fields in 'dynamic_fields' tracking collection keyed by the target collection.
- */
 async function syncFieldsToCollection(collectionName, fields = []) {
   if (!collectionName) throw new Error('collectionName required');
 
@@ -81,7 +64,6 @@ async function syncFieldsToCollection(collectionName, fields = []) {
     });
   }
 
-  // Use 'collectionName' in tracker as the physical target collection
   const trackedRows = await tracker.find({ collectionName: target }).toArray();
   const trackedNames = new Set(trackedRows.map(r => r.fieldName));
   const desiredNames = new Set(desired.map(d => d.fieldName));
@@ -93,38 +75,21 @@ async function syncFieldsToCollection(collectionName, fields = []) {
   const removed = [];
   const errors = [];
 
-  // Add new fields: add tracker row and create sparse index on target collection
   for (const d of toAdd) {
     try {
       await tracker.updateOne(
         { collectionName: target, fieldName: d.fieldName },
-        {
-          $set: {
-            collectionName: target,
-            fieldName: d.fieldName,
-            origName: d.origName,
-            fieldType: d.type,
-            createdAt: new Date(),
-          },
-        },
+        { $set: { collectionName: target, fieldName: d.fieldName, origName: d.origName, fieldType: d.type, createdAt: new Date() } },
         { upsert: true }
       );
-
-      const idx = {};
-      idx[d.fieldName] = 1;
-      await targetCol.createIndex(idx, {
-        name: `dyn_${d.fieldName}_idx`,
-        sparse: true,
-        background: true,
-      });
-
+      const idx = {}; idx[d.fieldName] = 1;
+      await targetCol.createIndex(idx, { name: `dyn_${d.fieldName}_idx`, sparse: true, background: true });
       added.push(d.fieldName);
     } catch (e) {
       errors.push({ add: d.fieldName, error: e && e.message ? e.message : String(e) });
     }
   }
 
-  // Remove deleted fields: drop index and remove tracker row
   for (const t of toRemove) {
     try {
       const idxName = `dyn_${t.fieldName}_idx`;
@@ -145,5 +110,5 @@ async function syncFieldsToCollection(collectionName, fields = []) {
 module.exports = {
   syncFieldsToCollection,
   safeFieldName,
-  normalizeCollectionNameToPlural,
+  normalizeCollectionNameToPlural
 };
