@@ -38,6 +38,49 @@ async function ensureTrackingCollection(db) {
 }
 
 /**
+ * Ensure a unique sparse index on 'ticket_code' for the given collection.
+ * - sparse:true so legacy docs without ticket_code won't block index creation.
+ * - background:true so index build doesn't block primary.
+ *
+ * db: MongoDB Db instance (optional) - if omitted we'll obtain a db from mongo client.
+ */
+async function ensureTicketCodeUniqueIndex(dbOrName, maybeCollectionName) {
+  let db = null;
+  let collectionName = null;
+
+  if (typeof dbOrName === 'string' && maybeCollectionName === undefined) {
+    // called as ensureTicketCodeUniqueIndex(collectionName)
+    collectionName = dbOrName;
+    db = await obtainDb();
+  } else if (dbOrName && typeof dbOrName.collection === 'function' && typeof maybeCollectionName === 'string') {
+    db = dbOrName;
+    collectionName = maybeCollectionName;
+  } else if (dbOrName && typeof dbOrName === 'object' && maybeCollectionName) {
+    // fallback: treat first param as db
+    db = dbOrName;
+    collectionName = String(maybeCollectionName);
+  } else {
+    // try to obtain db and collection param from maybeCollectionName
+    db = await obtainDb();
+    collectionName = maybeCollectionName || dbOrName;
+  }
+
+  if (!db) return;
+  if (!collectionName) return;
+
+  try {
+    const col = db.collection(collectionName);
+    await col.createIndex(
+      { ticket_code: 1 },
+      { unique: true, sparse: true, name: 'unique_ticket_code', background: true }
+    );
+  } catch (err) {
+    // best-effort: log but don't throw
+    console.warn(`[mongoSchemaSync] ensureTicketCodeUniqueIndex failed for ${collectionName}:`, err && (err.message || err));
+  }
+}
+
+/**
  * syncFieldsToCollection(collectionName, fields)
  * - collectionName: the target data collection (e.g. "visitors")
  * - fields: array of admin field objects, expecting at least .name and optional .type
@@ -120,4 +163,4 @@ async function syncFieldsToCollection(collectionName, fields = []) {
   return { added, removed, errors };
 }
 
-module.exports = { syncFieldsToCollection, safeFieldName };
+module.exports = { syncFieldsToCollection, safeFieldName, ensureTicketCodeUniqueIndex };

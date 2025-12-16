@@ -1,5 +1,7 @@
 const express = require("express");
 const router = express.Router();
+const { ObjectId } = require("mongodb");
+const { getDb } = require("../utils/mongoClient"); // your Mongo client util
 const { sendMail } = require("../utils/mailer");
 
 const API_BASE = (process.env.API_BASE || process.env.BACKEND_URL || "/api").replace(/\/$/, "");
@@ -11,20 +13,20 @@ const FRONTEND_BASE = (process.env.FRONTEND_BASE || process.env.APP_URL || "http
  *   entity_type: "speakers" | "awardees" | "exhibitors" | "partners",
  *   entity_id: "<id>",
  *   new_category: "vip" | "delegate" | "combo" | ...,
- *   amount?: number (optional; if present and >0 we will create a payment order and return checkoutUrl)
+ *   amount?: number (optional; if present >0 create payment order)
  * }
- *
- * Behavior:
- * - If amount > 0: create payment order by calling internal /api/payment/create-order and return checkoutUrl
- *   Caller (frontend) should redirect user to checkout; backend payment webhook should finalize upgrade by calling this same endpoint with provider tx id.
- * - If amount == 0 or not provided: perform the upgrade immediately by updating ticket record and entity confirm endpoints.
  */
 router.post("/", async (req, res) => {
   try {
     const { entity_type, entity_id, new_category, amount = 0, email } = req.body || {};
-    if (!entity_type || !entity_id || !new_category) return res.status(400).json({ success: false, error: "entity_type, entity_id and new_category are required" });
+    if (!entity_type || !entity_id || !new_category) {
+      return res.status(400).json({ success: false, error: "entity_type, entity_id and new_category are required" });
+    }
 
-    // If payment required, create order and return checkoutUrl
+    const db = await getDb();
+    const collection = db.collection(entity_type);
+
+    // Payment required: create order and return checkoutUrl
     if (Number(amount) > 0) {
       const payload = {
         amount: Number(amount),
@@ -33,59 +35,74 @@ router.post("/", async (req, res) => {
         reference_id: String(entity_id),
         metadata: { entity_type, new_category },
       };
-      const r = await fetch(`${API_BASE}/api/payment/create-order`, { method: "POST", headers: { "Content-Type": "application/json" , "ngrok-skip-browser-warning": "69420" }, body: JSON.stringify(payload) });
-      const js = await r.json().catch(() => ({}));
-      if (!r.ok || !js.success) {
-        return res.status(502).json({ success: false, error: js.error || "Failed to create payment order" });
+
+      try {
+        const r = await fetch(`${API_BASE}/api/payment/create-order`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "ngrok-skip-browser-warning": "69420",
+          },
+          body: JSON.stringify(payload),
+        });
+        const js = await r.json().catch(() => ({}));
+        if (!r.ok || !js.success) {
+          return res.status(502).json({ success: false, error: js.error || "Failed to create payment order" });
+        }
+        return res.json({ success: true, checkoutUrl: js.checkoutUrl || js.checkout_url || js.raw?.checkout_url, order: js });
+      } catch (e) {
+        console.error("Payment order creation failed:", e);
+        return res.status(502).json({ success: false, error: "Failed to create payment order" });
       }
-      return res.json({ success: true, checkoutUrl: js.checkoutUrl || js.checkout_url || js.raw?.checkout_url, order: js });
     }
 
-    // No payment: apply upgrade immediately
-    // 1) update ticket record (idempotent create)
-    // Fetch existing entity to get name/email/company/ticket_code
+    // No payment: perform upgrade immediately
+    // 1) Fetch entity row
     let entityRow = null;
     try {
-      const rowRes = await fetch(`${API_BASE}/api/${encodeURIComponent(entity_type)}/${encodeURIComponent(String(entity_id))}`);
-      if (rowRes.ok) entityRow = await rowRes.json().catch(()=>null);
-    } catch (e) { /* ignore */ }
+      const query = ObjectId.isValid(entity_id) ? { _id: new ObjectId(entity_id) } : { _id: entity_id };
+      entityRow = await collection.findOne(query);
+    } catch (e) {
+      console.warn("Entity lookup failed:", e);
+    }
 
-    const ticket_code = (entityRow && (entityRow.ticket_code || entityRow.code)) || null;
+    const ticket_code = (entityRow && (entityRow.ticket_code || entityRow.code)) || String(entity_id);
     const name = (entityRow && (entityRow.name || entityRow.fullName || entityRow.company)) || "";
     const emailToUse = email || (entityRow && (entityRow.email || entityRow.contactEmail)) || "";
 
+    // 2) Update or create ticket
     try {
-      await fetch(`${API_BASE}/api/tickets/create`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" , "ngrok-skip-browser-warning": "69420" },
-        body: JSON.stringify({
-          ticket_code,
-          entity_type: entity_type.replace(/s$/, ""), // e.g. speakers -> speaker
-          entity_id: entity_id || null,
-          name,
-          email: emailToUse || null,
-          company: entityRow && entityRow.company,
-          category: new_category,
-          meta: { upgradedFrom: "self-service", upgradedAt: new Date().toISOString() },
-        }),
-      }).catch(()=>{});
+      const ticketsCol = db.collection("tickets");
+      await ticketsCol.updateOne(
+        { ticket_code },
+        {
+          $set: {
+            entity_type: entity_type.replace(/s$/, ""),
+            entity_id,
+            name,
+            email: emailToUse || null,
+            company: entityRow?.company || null,
+            category: new_category,
+            meta: { upgradedFrom: "self-service", upgradedAt: new Date() },
+          },
+        },
+        { upsert: true }
+      );
     } catch (e) {
-      // log but continue
-      console.warn("tickets.create during upgrade failed", e);
+      console.warn("Ticket update/create failed:", e);
     }
 
-    // 2) update entity confirm endpoint
+    // 3) Update entity confirm fields
     try {
-      await fetch(`${API_BASE}/api/${encodeURIComponent(entity_type)}/${encodeURIComponent(String(entity_id))}/confirm`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" , "ngrok-skip-browser-warning": "69420" },
-        body: JSON.stringify({ ticket_category: new_category, upgradedAt: new Date().toISOString() }),
-      }).catch(()=>{});
+      const query = ObjectId.isValid(entity_id) ? { _id: new ObjectId(entity_id) } : { _id: entity_id };
+      await collection.updateOne(query, {
+        $set: { ticket_category: new_category, upgradedAt: new Date() },
+      });
     } catch (e) {
-      console.warn("entity confirm during upgrade failed", e);
+      console.warn("Entity confirm update failed:", e);
     }
 
-    // 3) send confirmation mail about upgrade
+    // 4) Send confirmation email
     if (emailToUse) {
       try {
         const upgradeManageUrl = `${FRONTEND_BASE}/ticket?entity=${encodeURIComponent(entity_type)}&id=${encodeURIComponent(String(entity_id))}`;
@@ -94,14 +111,14 @@ router.post("/", async (req, res) => {
         const bodyHtml = `<p>Hello ${name || ""},</p><p>Your ticket has been upgraded to <strong>${new_category}</strong>.</p><p>You can view/manage your ticket <a href="${upgradeManageUrl}">here</a>.</p>`;
         await sendMail({ to: emailToUse, subject: subj, text: bodyText, html: bodyHtml });
       } catch (e) {
-        console.warn("upgrade confirmation email failed", e);
+        console.warn("Upgrade confirmation email failed:", e);
       }
     }
 
     return res.json({ success: true, upgraded: true, entity_type, entity_id, new_category });
   } catch (err) {
-    console.error("tickets-upgrade error:", err && (err.stack || err));
-    res.status(500).json({ success: false, error: String(err && err.message ? err.message : err) });
+    console.error("tickets-upgrade error:", err);
+    return res.status(500).json({ success: false, error: String(err.message || err) });
   }
 });
 
