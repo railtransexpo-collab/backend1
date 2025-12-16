@@ -32,7 +32,7 @@ function mapTargetCollection(collectionName) {
   const name = (collectionName || '').toString().trim().toLowerCase();
   const singular = name.endsWith('s') ? name.slice(0, -1) : name;
 
-  const known = new Set(['visitor','exhibitor','partner','speaker','awardee','registrant']); // singulars
+  const known = new Set(['visitors','exhibitors','partners','speakers','awardees','registrant']); // singulars
   if (!name) return { target: 'registrants', role: 'visitor' };
   if (singular === 'registrant' || name === 'registrants') return { target: 'registrants', role: 'visitor' };
   if (known.has(singular)) {
