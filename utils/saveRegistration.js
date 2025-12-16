@@ -1,8 +1,18 @@
-// registrations.js
-// saveRegistration + helpers with ticket_code generation and uniqueness retry
+// utils/registrations.js
+// Centralized registration save helper that:
+// - Normalizes entity collection names (visitors/exhibitors/partners/speakers/awardees)
+//   to a single 'registrants' collection (role: singular).
+// - Generates a ticket_code for new records (TICK-<6 alnum>), retries on duplicate key.
+// - Uses idempotent upsert when email present (filter includes role to avoid cross-role collisions).
+// - Creates best-effort unique sparse indexes on email and ticket_code.
+//
+// Usage:
+//   const { saveRegistration, ensureIndexes } = require('./utils/registrations');
+//   await saveRegistration('visitors', form, { allowedFields, db }); // returns { insertedId, doc, existed }
+//   await ensureIndexes(db); // optional at startup
 
 const mongo = require('./mongoClient');
-const { safeFieldName } = require('./mongoSchemaSync'); // re-use the same normalization
+const { safeFieldName } = require('./mongoSchemaSync'); // reuse normalization if available
 
 async function obtainDb() {
   if (!mongo) throw new Error('mongoClient not available');
@@ -11,86 +21,29 @@ async function obtainDb() {
   throw new Error('mongoClient has no getDb/db');
 }
 
-/**
- * mapFormToDoc(form, allowedFields)
- * - form: object (raw submitted form)
- * - allowedFields: optional array of admin field objects (with .name) to whitelist only fields admin configured
- *
- * Returns an object with mapped normalized field names and _rawForm preserved.
- */
-function mapFormToDoc(form = {}, allowedFields = null) {
-  const doc = {};
-  const raw = form || {};
-
-  // build whitelist set of safe names if allowedFields provided
-  let whitelist = null;
-  if (Array.isArray(allowedFields)) {
-    whitelist = new Set(
-      allowedFields
-        .map(f => (f && f.name ? safeFieldName(f.name) : null))
-        .filter(Boolean)
-    );
-  }
-
-  for (const [k, v] of Object.entries(raw)) {
-    if (k === '_rawForm') continue;
-    const safe = safeFieldName(k);
-    if (!safe) continue;
-    // if whitelist exists, skip fields not in it
-    if (whitelist && !whitelist.has(safe)) continue;
-    // store value as-is (you may sanitize/coerce here)
-    doc[safe] = v === undefined ? null : v;
-  }
-
-  // Also coerce nested _rawForm keys (if front-end already provided nested)
-  // but avoid overwriting mapped keys
-  if (raw._rawForm && typeof raw._rawForm === 'object') {
-    for (const [k, v] of Object.entries(raw._rawForm || {})) {
-      const safe = safeFieldName(k);
-      if (!safe) continue;
-      if (doc[safe] === undefined) {
-        if (whitelist && !whitelist.has(safe)) continue;
-        doc[safe] = v === undefined ? null : v;
-      }
-    }
-  }
-
-  // Attach the raw payload for later debugging / email templates / admin
-  doc._rawForm = raw;
-  return doc;
+function singularizeRole(collName = '') {
+  if (!collName) return 'visitor';
+  const s = String(collName).trim().toLowerCase();
+  if (s.endsWith('s')) return s.slice(0, -1);
+  return s;
 }
 
-/**
- * Ensure a unique sparse index on 'email' for the given collection.
- * - uses sparse:true so docs without email are allowed.
- */
-async function ensureEmailUniqueIndex(db, collectionName) {
-  try {
-    const col = db.collection(collectionName);
-    // create unique sparse index on email (create if not exists)
-    await col.createIndex({ email: 1 }, { unique: true, sparse: true, name: 'unique_email_sparse' });
-  } catch (err) {
-    // log but don't fail the flow; index creation may fail if existing duplicates exist
-    console.warn(`[registrations] ensureEmailUniqueIndex failed for ${collectionName}:`, err && (err.message || err));
+function mapTargetCollection(collectionName) {
+  // We centralize most registration-like collections into 'registrants'
+  // and set role to the singular of collectionName (visitor, exhibitor, speaker, partner, awardee).
+  const known = new Set(['visitors','exhibitors','partners','speakers','awardees','registrants']);
+  const name = (collectionName || '').toString().trim().toLowerCase();
+  if (!name) return { target: 'registrants', role: 'visitor' };
+  if (name === 'registrants') return { target: 'registrants', role: 'visitor' };
+  if (known.has(name)) {
+    return { target: 'registrants', role: singularizeRole(name) };
   }
+  // For other collection names (e.g. tickets) keep them as-is
+  return { target: name, role: null };
 }
 
-/**
- * Ensure a unique sparse index on 'ticket_code' for the given collection.
- * - sparse:true so legacy docs without ticket_code won't block index creation.
- */
-async function ensureTicketCodeUniqueIndex(db, collectionName) {
-  try {
-    const col = db.collection(collectionName);
-    await col.createIndex({ ticket_code: 1 }, { unique: true, sparse: true, name: 'unique_ticket_code' });
-  } catch (err) {
-    console.warn(`[registrations] ensureTicketCodeUniqueIndex failed for ${collectionName}:`, err && (err.message || err));
-  }
-}
+/* ---------------- utilities ---------------- */
 
-/**
- * Generate a ticket code e.g. TICK-AB12CD
- */
 function generateTicketCode(length = 6) {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let code = '';
@@ -100,127 +53,195 @@ function generateTicketCode(length = 6) {
   return `TICK-${code}`;
 }
 
+async function ensureTicketCodeUniqueIndex(db, collectionName = 'registrants') {
+  try {
+    const col = db.collection(collectionName);
+    await col.createIndex(
+      { ticket_code: 1 },
+      { unique: true, sparse: true, name: 'unique_ticket_code', background: true }
+    );
+  } catch (err) {
+    console.warn(`[registrations] ensureTicketCodeUniqueIndex failed for ${collectionName}:`, err && (err.message || err));
+  }
+}
+
+async function ensureEmailUniqueIndex(db, collectionName = 'registrants') {
+  try {
+    const col = db.collection(collectionName);
+    await col.createIndex(
+      { email: 1 },
+      { unique: true, sparse: true, name: 'unique_email_sparse', background: true }
+    );
+  } catch (err) {
+    console.warn(`[registrations] ensureEmailUniqueIndex failed for ${collectionName}:`, err && (err.message || err));
+  }
+}
+
+/* ---------------- core: saveRegistration ---------------- */
 /**
  * saveRegistration(collectionName, form, options)
- * - collectionName: e.g. 'visitors', 'exhibitors', 'partners', 'awardees', 'speakers'
- * - form: object submitted from front-end
- * - options: { allowedFields: array } optional admin fields (use to whitelist)
+ * - collectionName: desired logical collection (visitors, exhibitors, partners, speakers, awardees, registrants, tickets)
+ * - form: object with submitted fields
+ * - options:
+ *      { allowedFields: array } optional admin fields to whitelist (names expected un-normalized)
+ *      { db }    optional Mongo Db instance (if caller has one)
  *
- * Uses idempotent upsert when email is present to avoid duplicates.
- * Adds ticket_code for new documents and ensures uniqueness (with retry).
- * Returns { insertedId, doc, existed }
+ * Behavior:
+ * - If collectionName maps to 'registrants' (common case), we store documents in that collection
+ *   and set doc.role to the singular role (visitor/exhibitor/...).
+ * - If email present, do idempotent upsert on { email, role } for registrants target.
+ * - New documents get ticket_code generated (TICK-xxxxxx) and createdAt/updatedAt set.
+ *
+ * Returns: { insertedId, doc, existed } where doc is the document from DB after save.
  */
 async function saveRegistration(collectionName, form = {}, options = {}) {
   if (!collectionName) throw new Error('collectionName required');
-  const db = await obtainDb();
-  const col = db.collection(collectionName);
+  const db = options.db || await obtainDb();
+  if (!db) throw new Error('db not available');
+
+  // Map logical collection name to physical collection and role
+  const { target: targetCollectionName, role } = mapTargetCollection(collectionName);
 
   const allowedFields = Array.isArray(options.allowedFields) ? options.allowedFields : null;
-  const mapped = mapFormToDoc(form, allowedFields);
 
-  // NOTE: Do not set createdAt directly on mapped before deciding insert vs update.
-  // We'll prepare docToInsert for $setOnInsert to ensure it only applies on insert.
-  const now = new Date();
-  const baseDoc = { ...mapped }; // shallow copy
-  baseDoc.createdAt = now;
-  baseDoc.updatedAt = now;
-
-  // Normalize email field if present
-  let emailNorm = null;
-  if (baseDoc.email && typeof baseDoc.email === 'string') {
-    emailNorm = baseDoc.email.trim().toLowerCase();
-    baseDoc.email = emailNorm;
-  } else if (baseDoc.email_address && typeof baseDoc.email_address === 'string') {
-    emailNorm = baseDoc.email_address.trim().toLowerCase();
-    baseDoc.email = emailNorm;
-    delete baseDoc.email_address;
+  // Map form to normalized doc (reuse safeFieldName if present)
+  const mapped = {};
+  const raw = form || {};
+  // whitelist if provided
+  let whitelist = null;
+  if (Array.isArray(allowedFields)) {
+    whitelist = new Set(allowedFields.map(f => (f && f.name ? safeFieldName(f.name) : null)).filter(Boolean));
+  }
+  for (const [k, v] of Object.entries(raw)) {
+    if (k === '_rawForm') continue;
+    const safe = (typeof safeFieldName === 'function') ? safeFieldName(k) : String(k).trim().toLowerCase().replace(/[\s-]+/g, '_').replace(/[^a-z0-9_]/g, '');
+    if (!safe) continue;
+    if (whitelist && !whitelist.has(safe)) continue;
+    mapped[safe] = v === undefined ? null : v;
+  }
+  // nested _rawForm merge
+  if (raw._rawForm && typeof raw._rawForm === 'object') {
+    for (const [k, v] of Object.entries(raw._rawForm || {})) {
+      const safe = (typeof safeFieldName === 'function') ? safeFieldName(k) : String(k).trim().toLowerCase().replace(/[\s-]+/g, '_').replace(/[^a-z0-9_]/g, '');
+      if (!safe) continue;
+      if (mapped[safe] === undefined) {
+        if (whitelist && !whitelist.has(safe)) continue;
+        mapped[safe] = v === undefined ? null : v;
+      }
+    }
   }
 
-  // Ensure ticket_code index exists (best-effort)
-  await ensureTicketCodeUniqueIndex(db, collectionName);
+  // Base doc
+  const now = new Date();
+  const baseDoc = { ...mapped, _rawForm: raw, updatedAt: now, createdAt: now };
 
-  // If we have an email, try an idempotent upsert (atomic) to avoid duplicates
-  if (emailNorm) {
-    // Ensure there's a unique sparse index on email (best-effort)
-    await ensureEmailUniqueIndex(db, collectionName);
+  // Attach role if target is registrants
+  if (role) baseDoc.role = role;
 
-    // We'll attempt to upsert with ticket_code generation, retrying on duplicate key (ticket_code) up to maxAttempts.
-    const maxAttempts = 5;
+  const col = db.collection(targetCollectionName);
+
+  // Ensure indexes for registrants target (best-effort)
+  if (targetCollectionName === 'registrants') {
+    await ensureTicketCodeUniqueIndex(db, 'registrants');
+    if (baseDoc.email) await ensureEmailUniqueIndex(db, 'registrants');
+  } else {
+    // ensure ticket_code index on other collections if you expect codes there
+    await ensureTicketCodeUniqueIndex(db, targetCollectionName).catch(()=>{});
+  }
+
+  // Normalize email if present in common keys
+  let emailNorm = null;
+  const emailCandidates = ['email', 'email_address', 'emailAddress', 'contactEmail'];
+  for (const k of emailCandidates) {
+    if (baseDoc[k] && typeof baseDoc[k] === 'string') {
+      emailNorm = baseDoc[k].trim().toLowerCase();
+      baseDoc.email = emailNorm;
+      break;
+    }
+  }
+
+  // If we have email and target is registrants -> idempotent upsert using (email + role)
+  if (emailNorm && targetCollectionName === 'registrants') {
+    const filter = { email: emailNorm, role: baseDoc.role };
+    // Prepare $setOnInsert doc: don't include updatedAt (we set later)
+    const setOnInsertDoc = { ...baseDoc };
+    // Remove fields we don't want to set on insert via $setOnInsert if necessary (keep createdAt/ticket_code etc)
+    const update = { $setOnInsert: setOnInsertDoc, $set: { updatedAt: now } };
+    // Try upsert with retry on ticket_code collisions
+    const maxAttempts = 6;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      // For each attempt generate a fresh ticket code if not already provided in incoming form
-      const docToInsert = { ...baseDoc };
-      if (!docToInsert.ticket_code) {
-        docToInsert.ticket_code = generateTicketCode();
-      }
-
+      // ensure a ticket_code exists in $setOnInsert
+      if (!setOnInsertDoc.ticket_code) setOnInsertDoc.ticket_code = generateTicketCode();
       try {
-        // Use findOneAndUpdate with upsert and $setOnInsert to avoid overwriting existing doc
-        const filter = { email: emailNorm };
-        const update = { $setOnInsert: docToInsert, $set: { updatedAt: now } };
-        const opts = { upsert: true, returnDocument: 'after' }; // node-driver v4: returnDocument: 'after'
+        const opts = { upsert: true, returnDocument: 'after' };
         const result = await col.findOneAndUpdate(filter, update, opts);
-
         const finalDoc = result && result.value ? result.value : null;
         const insertedId = finalDoc && finalDoc._id ? String(finalDoc._id) : null;
-
-        // Determine whether the doc existed before (if createdAt older than our now)
         const existed = finalDoc && finalDoc.createdAt && finalDoc.createdAt < now;
-
         return { insertedId, doc: finalDoc, existed: !!existed };
       } catch (err) {
-        // If duplicate key error due to ticket_code collision, retry with a new code.
         const isDup = err && (err.code === 11000 || (err.errmsg && err.errmsg.indexOf('E11000') !== -1));
         if (isDup && attempt < maxAttempts) {
-          // continue to next attempt with a new code
+          // regenerate ticket_code and retry
+          setOnInsertDoc.ticket_code = generateTicketCode();
           continue;
         }
-
-        // If duplicate and we've exhausted attempts, try to find the existing doc by email and return it
+        // if it's a duplicate on email/role (unlikely), try to return existing
         if (isDup) {
           try {
-            const existing = await col.findOne({ email: emailNorm });
-            if (existing) {
-              return { insertedId: existing && existing._id ? String(existing._id) : null, doc: existing, existed: true };
-            }
-          } catch (e2) {
-            // fallthrough to throw original
-          }
+            const existing = await col.findOne(filter);
+            if (existing) return { insertedId: existing && existing._id ? String(existing._id) : null, doc: existing, existed: true };
+          } catch (e2) {}
         }
-
-        // propagate error
         throw err;
       }
-    } // end attempts loop
+    }
+    throw new Error('Failed to upsert registration after multiple attempts');
   }
 
-  // If no email present, we can't upsert idempotently — insert once.
-  // We'll attempt to add ticket_code and retry on duplicate ticket_code collisions.
-  const maxAttemptsNoEmail = 5;
+  // No email or not registrants target -> do a single insert (but guard ticket_code uniqueness)
+  const maxAttemptsNoEmail = 6;
   for (let attempt = 1; attempt <= maxAttemptsNoEmail; attempt++) {
-    const docToInsert = { ...baseDoc };
-    if (!docToInsert.ticket_code) {
-      docToInsert.ticket_code = generateTicketCode();
-    }
+    if (!baseDoc.ticket_code) baseDoc.ticket_code = generateTicketCode();
     try {
-      const r = await col.insertOne(docToInsert);
-      const insertedId = r && r.insertedId ? String(r.insertedId) : null;
-      // Return the doc as stored (note: inserted doc won't have _id as string here)
-      // We can fetch it back to include any DB-generated fields
+      const r = await col.insertOne(baseDoc);
       const stored = await col.findOne({ _id: r.insertedId });
-      return { insertedId, doc: stored || docToInsert, existed: false };
+      const insertedId = r && r.insertedId ? String(r.insertedId) : null;
+      return { insertedId, doc: stored || baseDoc, existed: false };
     } catch (err) {
       const isDup = err && (err.code === 11000 || (err.errmsg && err.errmsg.indexOf('E11000') !== -1));
       if (isDup && attempt < maxAttemptsNoEmail) {
-        // retry with a fresh ticket_code
+        // try again with different code
+        baseDoc.ticket_code = generateTicketCode();
         continue;
       }
-      // Otherwise propagate
       throw err;
     }
   }
 
-  // Should not reach here; but throw defensively
-  throw new Error('Failed to save registration after multiple attempts');
+  throw new Error('Failed to save registration after attempts');
 }
 
-module.exports = { saveRegistration, mapFormToDoc, ensureEmailUniqueIndex, ensureTicketCodeUniqueIndex, generateTicketCode };
+/**
+ * ensureIndexes(db)
+ * - convenience helper to create best-effort indexes on registrants collection.
+ * - call once at app startup if desired.
+ */
+async function ensureIndexes(dbArg) {
+  const db = dbArg || await obtainDb();
+  try {
+    await ensureTicketCodeUniqueIndex(db, 'registrants');
+    await ensureEmailUniqueIndex(db, 'registrants');
+  } catch (e) {
+    console.warn('ensureIndexes error', e && e.message);
+  }
+}
+
+module.exports = {
+  saveRegistration,
+  mapFormToDoc, // keep for compatibility (mapFormToDoc inlined earlier; reuse if you prefer)
+  ensureEmailUniqueIndex,
+  ensureTicketCodeUniqueIndex,
+  generateTicketCode,
+  ensureIndexes,
+};
