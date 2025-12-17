@@ -67,7 +67,7 @@ router.post('/', async (req, res) => {
     const db = await obtainDb();
     if (!db) return res.status(500).json({ success: false, message: 'database not available' });
 
-    const coll = db.collection('registrants');
+    const coll = db.collection('visitors');
     const body = req.body || {};
     const form = body._rawForm || body.form || body || {};
 
@@ -153,7 +153,7 @@ router.get('/', async (req, res) => {
     const db = await obtainDb();
     if (!db) return res.status(500).json({ error: 'database not available' });
 
-    const coll = db.collection('registrants');
+    const coll = db.collection('visitors');
     const q = (req.query.q || '').trim();
     const limit = Math.min(1000, Math.max(1, parseInt(req.query.limit || '200', 10)));
     const skip = Math.max(0, parseInt(req.query.skip || '0', 10));
@@ -191,7 +191,7 @@ router.get('/:id', async (req, res) => {
     const db = await obtainDb();
     if (!db) return res.status(500).json({ error: 'database not available' });
 
-    const coll = db.collection('registrants');
+    const coll = db.collection('visitors');
     const id = req.params.id;
     const q = ObjectId.isValid(id) ? { _id: new ObjectId(id) } : { _id: id };
     q.role = 'visitor';
@@ -214,7 +214,7 @@ router.delete('/:id', async (req, res) => {
     const db = await obtainDb();
     if (!db) return res.status(500).json({ success: false, error: 'database not available' });
 
-    const coll = db.collection('registrants');
+    const coll = db.collection('visiotors');
     const id = req.params.id;
     const q = ObjectId.isValid(id) ? { _id: new ObjectId(id) } : { _id: id };
     q.role = 'visitor';
@@ -237,7 +237,7 @@ router.post('/:id/confirm', async (req, res) => {
     const db = await obtainDb();
     if (!db) return res.status(500).json({ success: false, error: 'database not available' });
 
-    const coll = db.collection('registrants');
+    const coll = db.collection('visitors');
     const id = req.params.id;
     const payload = { ...(req.body || {}) };
     const force = !!payload.force;

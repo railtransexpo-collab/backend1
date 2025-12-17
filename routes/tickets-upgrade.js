@@ -9,7 +9,7 @@ const { ensureTicketCodeUniqueIndex, safeFieldName } = require("../utils/mongoSc
  * Allowed entity collections that can be upgraded.
  * Restrict to known collections to avoid arbitrary collection access.
  */
-const ALLOWED_ENTITIES = new Set(["speakers", "awardees", "exhibitors", "partners", "registrants", "visitors"]);
+const ALLOWED_ENTITIES = new Set(["speakers", "awardees", "exhibitors", "partners",  "visitors"]);
 
 const API_BASE = (process.env.API_BASE || process.env.BACKEND_URL || "/api").replace(/\/$/, "");
 const FRONTEND_BASE = (process.env.FRONTEND_BASE || process.env.APP_URL || "http://localhost:3000").replace(/\/$/, "");
