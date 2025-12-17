@@ -1,13 +1,15 @@
 /**
  * backend/routes/tickets.js
  *
- * Fixed ticket scan to match your current storage (role-specific collections only).
- * - Searches only: visitors, exhibitors, partners, speakers, awardees (no 'registrants' legacy search).
- * - Fast indexed lookups first (exact + case-insensitive).
- * - Candidate-field queries (ticketCode, ticket_id, code, id, etc).
- * - Controlled JS scan fallback that inspects nested objects, arrays, stringified JSON and base64 JSON.
- * - Configurable scan limit via TICKET_SCAN_SCAN_LIMIT (default 1000).
- * - Enable verbose debug: DEBUG_TICKETS=true
+ * Updates:
+ * - Ticket codes in your DB are numeric-only. This file now:
+ *    - Accepts numeric incoming payloads and string payloads.
+ *    - Tries lookups against ticket_code as STRING and as NUMBER (if incoming looks numeric).
+ *    - Candidate-field queries test both string and numeric forms when applicable.
+ *    - JS scan fallback compares numbers and strings robustly (handles nested/_rawForm cases).
+ * - Keeps debug logging via DEBUG_TICKETS and a controlled scan limit via TICKET_SCAN_SCAN_LIMIT.
+ *
+ * Replace your existing tickets.js with this file and restart the server.
  */
 
 const express = require("express");
@@ -29,34 +31,36 @@ async function getDb() {
 }
 
 /* ---------- ticket extraction helpers ---------- */
-function tryParseJsonSafe(s) {
-  try { return JSON.parse(s); } catch (e) { return null; }
-}
+function tryParseJsonSafe(s) { try { return JSON.parse(s); } catch (e) { return null; } }
 function looksLikeBase64(s) {
   if (typeof s !== "string") return false;
   const s2 = s.replace(/\s+/g, "");
   return /^[A-Za-z0-9+/=]+$/.test(s2) && (s2.length % 4 === 0);
 }
+
+// For numeric-only ticket codes we accept digit-only values as valid ticket candidates.
 function isTicketCandidateValue(val) {
   if (val === undefined || val === null) return false;
-  const s = (typeof val === 'string') ? val.trim() : String(val);
+  const s = (typeof val === "string") ? val.trim() : String(val);
   if (!s) return false;
-  if (/^TICK-[A-Z0-9]{3,64}$/i.test(s)) return true;             // explicit TICK-... format
-  if (/^[A-Za-z0-9\-_\.]{3,64}$/.test(s)) return true;          // token-like
-  if (/^\d{4,12}$/.test(s)) return true;                        // numeric fallback
+  // numeric-only (1-12 digits) is primary expectation here
+  if (/^\d{1,12}$/.test(s)) return true;
+  // keep token-like as a fallback if some non-numeric exist
+  if (/^[A-Za-z0-9\-_\.]{3,64}$/.test(s)) return true;
   return false;
 }
 
-/* Recursively (stack-based) search an object/array/string for a ticket-like value.
+/* Recursively search an object/array/string for a ticket-like value.
    Returns first matching primitive string found, or null. Prefers well-known field names first.
 */
 function extractTicketIdFromObject(obj) {
   if (!obj || typeof obj !== "object") return null;
+
   const prefer = [
     "ticket_code","ticketCode","ticket_id","ticketId","ticket","ticketNo","ticketno","ticketid",
     "code","c","id","tk","t"
   ];
-  // Prefer explicit keys
+
   for (const k of prefer) {
     if (Object.prototype.hasOwnProperty.call(obj, k)) {
       const v = obj[k];
@@ -69,32 +73,35 @@ function extractTicketIdFromObject(obj) {
     }
   }
 
-  // Generic stack traversal
+  // stack traversal
   const stack = [obj];
   while (stack.length) {
     const node = stack.pop();
     if (node === null || node === undefined) continue;
-    if (typeof node === 'string' || typeof node === 'number' || typeof node === 'boolean') {
+
+    if (typeof node === "string" || typeof node === "number" || typeof node === "boolean") {
       if (isTicketCandidateValue(node)) return String(node).trim();
-      if (typeof node === 'string') {
+      if (typeof node === "string") {
         const parsed = tryParseJsonSafe(node);
-        if (parsed && typeof parsed === 'object') stack.push(parsed);
+        if (parsed && typeof parsed === "object") stack.push(parsed);
         else if (looksLikeBase64(node)) {
           try {
-            const dec = Buffer.from(node, 'base64').toString('utf8');
+            const dec = Buffer.from(node, "base64").toString("utf8");
             const p2 = tryParseJsonSafe(dec);
-            if (p2 && typeof p2 === 'object') stack.push(p2);
+            if (p2 && typeof p2 === "object") stack.push(p2);
             else if (isTicketCandidateValue(dec)) return String(dec).trim();
           } catch (e) {}
         }
       }
       continue;
     }
+
     if (Array.isArray(node)) {
       for (let i = 0; i < node.length; i++) stack.push(node[i]);
       continue;
     }
-    if (typeof node === 'object') {
+
+    if (typeof node === "object") {
       for (const key of Object.keys(node)) {
         const v = node[key];
         if (v === null || v === undefined) continue;
@@ -102,28 +109,29 @@ function extractTicketIdFromObject(obj) {
       }
     }
   }
+
   return null;
 }
 
 function extractTicketId(raw) {
   if (raw === undefined || raw === null) return null;
-  if (typeof raw === 'object') {
+  if (typeof raw === "object") {
     return extractTicketIdFromObject(raw);
   }
   const s = String(raw).trim();
   if (!s) return null;
   if (isTicketCandidateValue(s)) return s;
   const parsed = tryParseJsonSafe(s);
-  if (parsed && typeof parsed === 'object') {
+  if (parsed && typeof parsed === "object") {
     const f = extractTicketIdFromObject(parsed);
     if (f) return f;
   }
   if (looksLikeBase64(s)) {
     try {
-      const dec = Buffer.from(s, 'base64').toString('utf8');
+      const dec = Buffer.from(s, "base64").toString("utf8");
       if (isTicketCandidateValue(dec)) return dec;
       const p2 = tryParseJsonSafe(dec);
-      if (p2 && typeof p2 === 'object') {
+      if (p2 && typeof p2 === "object") {
         const f2 = extractTicketIdFromObject(p2);
         if (f2) return f2;
       }
@@ -132,7 +140,7 @@ function extractTicketId(raw) {
   const jsonMatch = s.match(/\{.*\}/s);
   if (jsonMatch) {
     const p = tryParseJsonSafe(jsonMatch[0]);
-    if (p && typeof p === 'object') {
+    if (p && typeof p === "object") {
       const f3 = extractTicketIdFromObject(p);
       if (f3) return f3;
     }
@@ -150,84 +158,111 @@ function unique(arr) { return Array.from(new Set(arr.filter(Boolean))); }
 const CANDIDATE_FIELDS = ["ticket_code","ticketCode","ticket_id","ticketId","ticket","ticketNo","ticketno","ticketid","code","c","id","tk","t"];
 
 /* ---------- core: findTicket ----------
-   Searches ONLY the role-specific collections (no 'registrants').
+   Now handles numeric-only storage: queries both string and numeric forms when incoming key is digits.
 */
 async function findTicket(ticketKey) {
   const db = await getDb();
-  const key = String(ticketKey).trim();
+  const rawKey = String(ticketKey || "").trim();
+  if (!rawKey) return null;
+
   const SCAN_LIMIT = Number(process.env.TICKET_SCAN_SCAN_LIMIT || 1000);
-  const collections = ["visitors", "exhibitors", "partners", "speakers", "awardees"]; // role collections only
+  const collections = ["visitors", "exhibitors", "partners", "speakers", "awardees"];
+
+  // Determine numeric form if incoming is digits
+  const isDigits = /^\d+$/.test(rawKey);
+  const keyStr = rawKey;
+  const keyNum = isDigits ? Number(rawKey) : null;
 
   const fieldVariants = unique(CANDIDATE_FIELDS.flatMap(f => [f, toSnakeCase(f), f.toLowerCase()]));
 
   for (const collName of collections) {
     const col = db.collection(collName);
 
-    // 1) exact match on ticket_code
+    // 1) Exact match on ticket_code as STRING
     try {
-      const exact = await col.findOne({ ticket_code: key });
-      if (exact) {
-        if (process.env.DEBUG_TICKETS === "true") console.log(`[tickets] exact match in ${collName}`);
-        return { doc: exact, collection: collName };
+      const exactStr = await col.findOne({ ticket_code: keyStr });
+      if (exactStr) {
+        if (process.env.DEBUG_TICKETS === "true") console.log(`[tickets] exact string match in ${collName}`);
+        return { doc: exactStr, collection: collName };
       }
     } catch (e) {
-      if (process.env.DEBUG_TICKETS === "true") console.warn("[tickets] exact check error", e);
+      if (process.env.DEBUG_TICKETS === "true") console.warn("[tickets] exact string check error", e);
     }
 
-    // 2) case-insensitive anchored regex on ticket_code
-    try {
-      const rx = new RegExp(`^${escapeRegex(key)}$`, "i");
-      const ci = await col.findOne({ ticket_code: { $regex: rx } });
-      if (ci) {
-        if (process.env.DEBUG_TICKETS === "true") console.log(`[tickets] ci match in ${collName}`);
-        return { doc: ci, collection: collName };
+    // 1b) Exact match on ticket_code as NUMBER (if incoming is digits)
+    if (isDigits) {
+      try {
+        const exactNum = await col.findOne({ ticket_code: keyNum });
+        if (exactNum) {
+          if (process.env.DEBUG_TICKETS === "true") console.log(`[tickets] exact numeric match in ${collName}`);
+          return { doc: exactNum, collection: collName };
+        }
+      } catch (e) {
+        if (process.env.DEBUG_TICKETS === "true") console.warn("[tickets] exact numeric check error", e);
       }
-    } catch (e) {}
+    }
 
-    // 3) candidate fields exact + anchored regex
+    // 2) Candidate fields: try string value and numeric value (if digits)
     try {
-      const or = [];
+      const orClauses = [];
       for (const f of fieldVariants) {
-        const e = {}; e[f] = key; or.push(e);
-        const r = {}; r[f] = { $regex: new RegExp(`^${escapeRegex(key)}$`, "i") }; or.push(r);
+        const strClause = {}; strClause[f] = keyStr; orClauses.push(strClause);
+        if (isDigits) { const numClause = {}; numClause[f] = keyNum; orClauses.push(numClause); }
+        // regex anchored fallback (string only) - numbers don't need regex
+        const regexClause = {}; regexClause[f] = { $regex: new RegExp(`^${escapeRegex(keyStr)}$`) }; orClauses.push(regexClause);
       }
-      if (or.length) {
-        const row = await col.findOne({ $or: or });
+      if (orClauses.length) {
+        const row = await col.findOne({ $or: orClauses });
         if (row) {
           if (process.env.DEBUG_TICKETS === "true") console.log(`[tickets] candidate-field match in ${collName}`);
           return { doc: row, collection: collName };
         }
       }
     } catch (e) {
-      if (process.env.DEBUG_TICKETS === "true") console.warn("[tickets] candidate-fields query error", e);
+      if (process.env.DEBUG_TICKETS === "true") console.warn("[tickets] candidate-fields error", e);
     }
 
-    // 4) controlled JS scan fallback (inspects nested values and _rawForm)
+    // 3) Controlled JS scan fallback (checks nested values and _rawForm)
     try {
       const existsClauses = fieldVariants.map(f => ({ [f]: { $exists: true } }));
       existsClauses.push({ _rawForm: { $exists: true } });
       const query = { $or: existsClauses };
       if (process.env.DEBUG_TICKETS === "true") console.log(`[tickets] scanning up to ${SCAN_LIMIT} docs in ${collName}`);
       const cursor = col.find(query).limit(SCAN_LIMIT);
+
       while (await cursor.hasNext()) {
         const doc = await cursor.next();
 
-        // quick candidate-field checks
+        // quick field checks (support both string and numeric stored values)
         for (const f of fieldVariants) {
-          if (Object.prototype.hasOwnProperty.call(doc, f)) {
-            const v = doc[f];
-            if (isTicketCandidateValue(v) && String(v).trim().toLowerCase() === key.toLowerCase()) {
-              if (process.env.DEBUG_TICKETS === "true") console.log(`[tickets] quick field match (${f}) in ${collName}`);
+          if (!Object.prototype.hasOwnProperty.call(doc, f)) continue;
+          const v = doc[f];
+          if (v === undefined || v === null) continue;
+          if (isDigits) {
+            // numeric compare
+            if (typeof v === "number" && v === keyNum) {
+              if (process.env.DEBUG_TICKETS === "true") console.log(`[tickets] quick numeric field match (${f}) in ${collName}`);
               return { doc, collection: collName };
             }
+            if (typeof v === "string" && v.trim() === keyStr) {
+              if (process.env.DEBUG_TICKETS === "true") console.log(`[tickets] quick string field match (${f}) in ${collName}`);
+              return { doc, collection: collName };
+            }
+            // allow stringified numbers
+            if (String(v).trim() === keyStr) { return { doc, collection: collName }; }
+          } else {
+            if (String(v).trim() === keyStr) { return { doc, collection: collName }; }
           }
         }
 
         // deep inspection
         const found = extractTicketIdFromObject(doc);
-        if (found && String(found).trim().toLowerCase() === key.toLowerCase()) {
-          if (process.env.DEBUG_TICKETS === "true") console.log(`[tickets] deep match in ${collName}`);
-          return { doc, collection: collName };
+        if (found) {
+          if (isDigits) {
+            if (String(found).trim() === keyStr) return { doc, collection: collName };
+          } else {
+            if (String(found).trim() === keyStr) return { doc, collection: collName };
+          }
         }
 
         // _rawForm special handling
@@ -237,23 +272,23 @@ async function findTicket(ticketKey) {
             const p = tryParseJsonSafe(raw);
             if (p && typeof p === "object") {
               const f = extractTicketIdFromObject(p);
-              if (f && String(f).trim().toLowerCase() === key.toLowerCase()) return { doc, collection: collName };
+              if (f && String(f).trim() === keyStr) return { doc, collection: collName };
             } else if (looksLikeBase64(raw)) {
               try {
                 const dec = Buffer.from(raw, "base64").toString("utf8");
-                if (isTicketCandidateValue(dec) && String(dec).trim().toLowerCase() === key.toLowerCase()) return { doc, collection: collName };
+                if (String(dec).trim() === keyStr) return { doc, collection: collName };
                 const p2 = tryParseJsonSafe(dec);
                 if (p2 && typeof p2 === "object") {
                   const f2 = extractTicketIdFromObject(p2);
-                  if (f2 && String(f2).trim().toLowerCase() === key.toLowerCase()) return { doc, collection: collName };
+                  if (f2 && String(f2).trim() === keyStr) return { doc, collection: collName };
                 }
               } catch (e) {}
-            } else if (typeof raw === "string" && raw.toLowerCase().indexOf(key.toLowerCase()) !== -1) {
+            } else if (typeof raw === "string" && raw.indexOf(keyStr) !== -1) {
               return { doc, collection: collName };
             }
           } else if (typeof raw === "object") {
             const f3 = extractTicketIdFromObject(raw);
-            if (f3 && String(f3).trim().toLowerCase() === key.toLowerCase()) return { doc, collection: collName };
+            if (f3 && String(f3).trim() === keyStr) return { doc, collection: collName };
           }
         }
       }
@@ -270,6 +305,7 @@ router.post("/validate", express.json({ limit: "2mb" }), async (req, res) => {
   try {
     const incoming = req.body.ticketId || req.body.raw;
     if (!incoming) return res.status(400).json({ success: false, error: "ticketId or raw payload required" });
+
     const ticketKey = extractTicketId(incoming);
     if (!ticketKey) return res.status(400).json({ success: false, error: "Could not extract ticket id" });
 
@@ -280,7 +316,7 @@ router.post("/validate", express.json({ limit: "2mb" }), async (req, res) => {
     const entityTypeMap = { visitors: "visitor", exhibitors: "exhibitor", partners: "partner", speakers: "speaker", awardees: "awardee" };
 
     const ticket = {
-      ticket_code: doc.ticket_code || ticketKey,
+      ticket_code: (doc.ticket_code !== undefined && doc.ticket_code !== null) ? doc.ticket_code : String(ticketKey).trim(),
       entity_type: entityTypeMap[collection] || null,
       entity_id: doc._id,
       name: doc.name || doc.full_name || null,
@@ -303,6 +339,7 @@ router.post("/scan", express.json({ limit: "2mb" }), async (req, res) => {
   try {
     const incoming = req.body.ticketId || req.body.raw;
     if (!incoming) return res.status(400).json({ success: false, error: "ticketId or raw payload required" });
+
     const ticketKey = extractTicketId(incoming);
     if (!ticketKey) return res.status(400).json({ success: false, error: "Could not extract ticket id" });
 
@@ -313,7 +350,7 @@ router.post("/scan", express.json({ limit: "2mb" }), async (req, res) => {
     const entityTypeMap = { visitors: "visitor", exhibitors: "exhibitor", partners: "partner", speakers: "speaker", awardees: "awardee" };
 
     const ticket = {
-      ticket_code: doc.ticket_code || ticketKey,
+      ticket_code: (doc.ticket_code !== undefined && doc.ticket_code !== null) ? doc.ticket_code : String(ticketKey).trim(),
       entity_type: entityTypeMap[collection] || null,
       entity_id: doc._id,
       name: doc.name || doc.full_name || "",
@@ -323,7 +360,7 @@ router.post("/scan", express.json({ limit: "2mb" }), async (req, res) => {
       raw_row: doc
     };
 
-    // PDF generation (unchanged behavior)
+    // PDF generation (unchanged)
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `inline; filename=ticket-${ticket.ticket_code}.pdf`);
 
