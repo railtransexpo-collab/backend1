@@ -66,19 +66,22 @@ async function findTicketInCollection(collectionName, ticketKey) {
   const db = await getDb();
   const col = db.collection(collectionName);
 
-  const key = String(ticketKey).trim();
+  const keyStr = String(ticketKey).trim();
+  const keyNum = Number(ticketKey);
 
-  // 1️⃣ Exact indexed lookup
-  let row = await col.findOne({ ticket_code: key });
-  if (row) return row;
+  const orQuery = [
+    { ticket_code: keyStr }
+  ];
 
-  // 2️⃣ Case-insensitive fallback
-  row = await col.findOne({
-    ticket_code: { $regex: new RegExp(`^${escapeRegex(key)}$`, "i") }
-  });
+  if (!isNaN(keyNum)) {
+    orQuery.push({ ticket_code: keyNum });
+  }
 
+  // 🔑 THIS MATCHES BOTH STRING + NUMBER
+  const row = await col.findOne({ $or: orQuery });
   return row || null;
 }
+
 
 /* ---------- Collections to search ---------- */
 const COLLECTIONS = [
