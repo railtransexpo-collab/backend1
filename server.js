@@ -59,7 +59,7 @@ app.use(cors({
 }));
 
 // make sure preflight OPTIONS requests are handled
-app.options('*', cors());
+app.options('/*', cors());
 
 // --- Simple request logger ---
 app.use((req, res, next) => {
