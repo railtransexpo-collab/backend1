@@ -14,6 +14,7 @@ app.use('/uploads', express.static(uploadsDir, {
   setHeaders: (res, filePath) => {
     if (filePath.match(/\.(mp4)$/i)) res.setHeader('Content-Type', 'video/mp4');
     if (filePath.match(/\.(webm)$/i)) res.setHeader('Content-Type', 'video/webm');
+    // static assets often safely allow all origins
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Accept-Ranges', 'bytes');
   }
@@ -24,12 +25,14 @@ app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // --- CORS (configurable) ---
+// default origins allowed in development
 const defaultOrigins = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
   'https://railtrans-expo-yld6-git-master-railtransexpos-projects.vercel.app'
 ];
 
+// allow user to pass comma-separated ALLOWED_ORIGINS or REACT_APP_API_BASE_URL
 const envOrigins = (process.env.ALLOWED_ORIGINS || process.env.REACT_APP_API_BASE_URL || '')
   .split(',')
   .map(s => s.trim())
@@ -37,16 +40,26 @@ const envOrigins = (process.env.ALLOWED_ORIGINS || process.env.REACT_APP_API_BAS
 
 const allowedOrigins = [...new Set([...defaultOrigins, ...envOrigins])];
 
+// expose FRONTEND_ORIGIN env var convenience
+const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || '';
+
 app.use(cors({
   origin: (origin, cb) => {
+    // allow non-browser requests (curl, server-to-server)
     if (!origin) return cb(null, true);
+    // in development, allow any origin (change for production)
     if (process.env.NODE_ENV !== 'production') return cb(null, true);
-    if (allowedOrigins.includes(origin)) return cb(null, true);
+    // allow if explicitly in allowed origins or explicit FRONTEND_ORIGIN
+    if (allowedOrigins.includes(origin) || (FRONTEND_ORIGIN && origin === FRONTEND_ORIGIN)) return cb(null, true);
     return cb(new Error('Not allowed by CORS'), false);
   },
   credentials: true,
-  allowedHeaders: ['Content-Type', 'Authorization', 'ngrok-skip-browser-warning'],
+  // keep allowed headers minimal to avoid unnecessary preflights
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
 }));
+
+// make sure preflight OPTIONS requests are handled
+app.options('*', cors());
 
 // --- Simple request logger ---
 app.use((req, res, next) => {
@@ -159,14 +172,12 @@ if (partnersRouter) app.use('/api/partners', partnersRouter); else console.warn(
 if (partnerConfigRouter) {
   app.use('/api/partner-config', partnerConfigRouter);
 } else {
-  // Provide a safe fallback endpoint to avoid frontend 404 when router file is missing.
   console.warn('No partner-config router found (routes/partner-config-mongo.js or routes/partnerConfig.js missing). Mounting fallback /api/partner-config that returns empty config.');
   app.get('/api/partner-config', (req, res) => res.json({ fields: [], images: [], eventDetails: {} }));
 }
 
 // Speakers (CRUD)
 if (speakersRouter) app.use('/api/speakers', speakersRouter); else console.warn('No speakers router found');
-// speaker-config: prefer mongo then SQL fallback at /api/speaker-config
 if (speakerConfigMongoRouter) app.use('/api/speaker-config', speakerConfigMongoRouter);
 else if (speakerConfigRouter) app.use('/api/speaker-config', speakerConfigRouter);
 else {
@@ -220,7 +231,6 @@ if (configsRouter) {
 // --- Backwards-compatible event-details endpoints (use unified configs collection if configsRouter missing or in addition) ---
 app.get('/api/event-details', async (req, res) => {
   try {
-    // prefer reading via DB directly, using obtainDb
     const db = await obtainDb();
     if (!db) return res.status(200).json({ name: "", date: "", venue: "", time: "", tagline: "" });
     const col = db.collection('app_configs');
@@ -242,22 +252,12 @@ app.post('/api/event-details/config', async (req, res) => {
     const update = { $set: { key: 'event-details', value: payload, updatedAt: new Date() } };
     await col.updateOne({ key: 'event-details' }, update, { upsert: true });
     const after = await col.findOne({ key: 'event-details' });
-    // notify via server logs; frontend listeners are triggered by client dispatch after save
     return res.json({ success: true, key: after.key, value: after.value, updatedAt: after.updatedAt });
   } catch (err) {
     console.error('POST /api/event-details/config error', err && (err.stack || err));
     return res.status(500).json({ success: false, message: 'Failed to save event details' });
   }
 });
-
-// If configsRouter is mounted, also provide a small convenience alias for GET/POST event-details to configs route (redirect style)
-if (configsRouter) {
-  // keep compatibility but prefer DB-backed handlers above; we keep these for clear routing if needed
-  app.get('/api/configs/event-details', (req, res, next) => {
-    // letting configsRouter handle it (mounted at /api/configs)
-    next();
-  });
-}
 
 // --- Health & root ---
 app.get('/api/health', (req, res) => res.json({ ok: true }));
@@ -273,7 +273,7 @@ app.use((err, req, res, next) => {
 });
 
 // --- Start server ---
-const PORT = process.env.PORT ;
+const PORT = process.env.PORT || 5000;
 
 (async function start() {
   try {
@@ -288,12 +288,9 @@ const PORT = process.env.PORT ;
       }
     }
 
-    
-
-    app.listen(PORT,"0.0.0.0", () => {
+    app.listen(PORT, "0.0.0.0", () => {
       console.log(`Server running at port ${PORT}`);
       console.log('Allowed CORS origins:', allowedOrigins.length ? allowedOrigins : 'all (dev)');
-      // Log mounted route availability to help debug 404s
       console.log('Route status:');
       console.log(' - /api/visitor-config ->', visitorConfigRouter ? 'mounted' : 'fallback/none');
       console.log(' - /api/partner-config ->', partnerConfigRouter ? 'mounted' : 'fallback/none');
