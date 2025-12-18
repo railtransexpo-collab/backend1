@@ -1,14 +1,3 @@
-/**
- * backend/routes/tickets.js
- *
- * Robust lookup + debug-check endpoint.
- * - POST /validate and /scan: unchanged behavior (robust numeric/string candidate searches).
- * - POST /debug-check: returns detailed per-collection diagnostics for the provided payload.
- *
- * Usage (debug):
- *   curl -X POST 'https://your-backend/api/tickets/debug-check' -H 'Content-Type: application/json' -d '{"ticketId":"123456"}'
- */
-
 const express = require("express");
 const router = express.Router();
 const PDFDocument = require("pdfkit");
@@ -28,24 +17,33 @@ function looksLikeBase64(s) {
   const s2 = s.replace(/\s+/g, "");
   return /^[A-Za-z0-9+/=]+$/.test(s2) && (s2.length % 4 === 0);
 }
+function escapeRegex(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Extract ticket id candidate from an object (shallow preference then deep stack scan).
+ */
 function extractTicketIdFromObject(obj) {
   if (!obj || typeof obj !== "object") return null;
   const prefer = ["ticket_code","ticketCode","ticket_id","ticketId","ticket","ticketNo","ticketno","ticketid","code","c","id","tk","t"];
   for (const k of prefer) {
     if (Object.prototype.hasOwnProperty.call(obj, k)) {
       const v = obj[k];
-      if (v !== undefined && v !== null) return String(v);
+      if (v !== undefined && v !== null && String(v).trim() !== "") return String(v).trim();
     }
     const snake = k.replace(/([A-Z])/g, "_$1").toLowerCase();
     if (Object.prototype.hasOwnProperty.call(obj, snake)) {
       const v = obj[snake];
-      if (v !== undefined && v !== null) return String(v);
+      if (v !== undefined && v !== null && String(v).trim() !== "") return String(v).trim();
     }
   }
+
   const stack = [obj];
   while (stack.length) {
     const node = stack.pop();
     if (node === null || node === undefined) continue;
+
     if (typeof node === "string" || typeof node === "number" || typeof node === "boolean") {
       const s = String(node).trim();
       if (s) return s;
@@ -63,12 +61,12 @@ function extractTicketIdFromObject(obj) {
       }
       continue;
     }
+
     if (Array.isArray(node)) {
-      for (let i = 0; i < node.length; i++) {
-        stack.push(node[i]);
-      }
+      for (let i = 0; i < node.length; i++) stack.push(node[i]);
       continue;
     }
+
     if (typeof node === 'object') {
       for (const key of Object.keys(node)) {
         const v = node[key];
@@ -80,19 +78,28 @@ function extractTicketIdFromObject(obj) {
   return null;
 }
 
+/**
+ * Normalise various inputs into a ticket key string (supports digits, tokens, JSON, base64 JSON).
+ * - Prefer a 3-64 char alphanumeric/token match (covers TICK-ABC123, DLN2722)
+ * - Then fallback to numeric substring (3-12 digits) for purely numeric systems
+ */
 function extractTicketId(input) {
   if (input === undefined || input === null) return null;
+
   if (typeof input === 'number') return String(input);
+
   if (typeof input === 'string') {
     const s = input.trim();
     if (!s) return null;
-    const m = s.match(/\d{3,12}/);
-    if (m) return m[0];
+
+    // Try parse JSON first (common if scanner encoded JSON)
     const parsed = tryParseJsonSafe(s);
     if (parsed && typeof parsed === 'object') {
       const f = extractTicketIdFromObject(parsed);
       if (f) return f;
     }
+
+    // If it's base64, try decode and parse
     if (looksLikeBase64(s)) {
       try {
         const dec = Buffer.from(s, 'base64').toString('utf8');
@@ -101,21 +108,35 @@ function extractTicketId(input) {
           const f2 = extractTicketIdFromObject(p2);
           if (f2) return f2;
         }
-        const m2 = dec.match(/\d{3,12}/);
-        if (m2) return m2[0];
+        // try token/digits in decoded string
+        const tokDec = dec.match(/[A-Za-z0-9\-_\.]{3,64}/);
+        if (tokDec) return tokDec[0];
+        const digDec = dec.match(/\d{3,12}/);
+        if (digDec) return digDec[0];
       } catch (e) {}
     }
+
+    // Look for an alphanumeric token (covers most QR payloads like TICK-ABC123, DLN2722, etc.)
+    const token = s.match(/[A-Za-z0-9\-_\.]{3,64}/);
+    if (token) return token[0];
+
+    // Finally fallback to numeric substring for numeric-only codes
+    const m = s.match(/\d{3,12}/);
+    if (m) return m[0];
+
     return null;
   }
+
   if (typeof input === 'object') {
     const f = extractTicketIdFromObject(input);
     if (f) return f;
     return null;
   }
+
   return null;
 }
 
-const CANDIDATE_FIELDS = ["ticket_code","ticketCode","ticket_id","ticketId","ticket","ticketNo","ticketno","ticketid","code","c","id","tk","t"];
+const CANDIDATE_FIELDS = ["ticket_code","ticketCode","ticket_id","ticketId","ticket","ticketNo","ticketno","ticketid","code","c","id","tk","t","ticket_code_num"];
 
 async function findTicketDetailed(ticketKey) {
   const debug = { ticketKey, checked: [] };
@@ -130,56 +151,98 @@ async function findTicketDetailed(ticketKey) {
     const collDebug = { collection: collName, steps: [], matched: null };
     const col = db.collection(collName);
 
-    // exact ticket_code
+    // 1) exact ticket_code as string
     try {
       const exact = await col.findOne({ ticket_code: keyStr });
       collDebug.steps.push({ step: 'exact_ticket_code_string', found: !!exact });
-      if (exact) { collDebug.matched = { by: 'ticket_code_string', doc: { _id: String(exact._id), ticket_code: exact.ticket_code } }; debug.checked.push(collDebug); return { debug, result: { doc: exact, collection: collName } }; }
+      if (exact) {
+        collDebug.matched = { by: 'ticket_code_string', doc: { _id: String(exact._id), ticket_code: exact.ticket_code } };
+        debug.checked.push(collDebug);
+        return { debug, result: { doc: exact, collection: collName } };
+      }
     } catch (e) { collDebug.steps.push({ step:'exact_ticket_code_string_error', error: String(e && e.message) }); }
 
-    // numeric ticket_code
+    // 1b) exact ticket_code_num if numeric
     if (keyNum !== null) {
       try {
-        const exactNum = await col.findOne({ ticket_code: keyNum });
-        collDebug.steps.push({ step: 'exact_ticket_code_number', found: !!exactNum });
-        if (exactNum) { collDebug.matched = { by: 'ticket_code_number', doc: { _id: String(exactNum._id), ticket_code: exactNum.ticket_code } }; debug.checked.push(collDebug); return { debug, result: { doc: exactNum, collection: collName } }; }
+        const exactNum = await col.findOne({ ticket_code_num: keyNum });
+        collDebug.steps.push({ step: 'exact_ticket_code_num_field', found: !!exactNum });
+        if (exactNum) {
+          collDebug.matched = { by: 'ticket_code_num', doc: { _id: String(exactNum._id), ticket_code_num: exactNum.ticket_code_num } };
+          debug.checked.push(collDebug);
+          return { debug, result: { doc: exactNum, collection: collName } };
+        }
+      } catch (e) { collDebug.steps.push({ step:'exact_ticket_code_num_error', error: String(e && e.message) }); }
+    }
+
+    // 1c) exact ticket_code as number (legacy where ticket_code stored as number)
+    if (keyNum !== null) {
+      try {
+        const exactNum2 = await col.findOne({ ticket_code: keyNum });
+        collDebug.steps.push({ step: 'exact_ticket_code_number', found: !!exactNum2 });
+        if (exactNum2) {
+          collDebug.matched = { by: 'ticket_code_number', doc: { _id: String(exactNum2._id), ticket_code: exactNum2.ticket_code } };
+          debug.checked.push(collDebug);
+          return { debug, result: { doc: exactNum2, collection: collName } };
+        }
       } catch (e) { collDebug.steps.push({ step:'exact_ticket_code_number_error', error: String(e && e.message) }); }
     }
 
-    // candidate fields
+    // 2) candidate fields exact and regex (string and numeric)
     try {
       const or = [];
       for (const f of CANDIDATE_FIELDS) {
         const o1 = {}; o1[f] = keyStr; or.push(o1);
+        // anchored case-insensitive regex fallback for string tokens
+        const orRe = {}; orRe[f] = { $regex: new RegExp(`^${escapeRegex(keyStr)}$`, "i") }; or.push(orRe);
         if (keyNum !== null) { const o2 = {}; o2[f] = keyNum; or.push(o2); }
       }
       const row = or.length ? await col.findOne({ $or: or }) : null;
       collDebug.steps.push({ step: 'candidate_fields_db', found: !!row, tried: or.length });
-      if (row) { collDebug.matched = { by: 'candidate_field', doc: { _id: String(row._id) } }; debug.checked.push(collDebug); return { debug, result: { doc: row, collection: collName } }; }
+      if (row) {
+        collDebug.matched = { by: 'candidate_field', doc: { _id: String(row._id) } };
+        debug.checked.push(collDebug);
+        return { debug, result: { doc: row, collection: collName } };
+      }
     } catch (e) { collDebug.steps.push({ step:'candidate_fields_error', error: String(e && e.message) }); }
 
-    // controlled JS scan fallback (limited)
+    // 3) controlled JS scan fallback (limited)
     try {
       const existsClauses = CANDIDATE_FIELDS.map(f=> ({ [f]: { $exists: true } })); existsClauses.push({ _rawForm: { $exists: true } });
       const cursor = col.find({ $or: existsClauses }).limit(SCAN_LIMIT);
       collDebug.steps.push({ step: 'scan_start', limit: SCAN_LIMIT });
       while (await cursor.hasNext()) {
         const d = await cursor.next();
-        // quick check
+
+        // quick field checks
         for (const f of CANDIDATE_FIELDS) {
           if (!Object.prototype.hasOwnProperty.call(d, f)) continue;
           const v = d[f];
           if (v === undefined || v === null) continue;
           if (keyNum !== null && typeof v === 'number' && v === keyNum) {
-            collDebug.matched = { by: `field_${f}_number`, doc: { _id: String(d._id), [f]: v } }; debug.checked.push(collDebug); return { debug, result: { doc: d, collection: collName } };
+            collDebug.matched = { by: `field_${f}_number`, doc: { _id: String(d._id), [f]: v } };
+            debug.checked.push(collDebug);
+            return { debug, result: { doc: d, collection: collName } };
           }
           if (String(v).trim() === keyStr) {
-            collDebug.matched = { by: `field_${f}_string`, doc: { _id: String(d._id), [f]: v } }; debug.checked.push(collDebug); return { debug, result: { doc: d, collection: collName } };
+            collDebug.matched = { by: `field_${f}_string`, doc: { _id: String(d._id), [f]: v } };
+            debug.checked.push(collDebug);
+            return { debug, result: { doc: d, collection: collName } };
+          }
+          if (typeof v === 'string' && String(v).trim().toLowerCase() === keyStr.toLowerCase()) {
+            collDebug.matched = { by: `field_${f}_ci_string`, doc: { _id: String(d._id), [f]: v } };
+            debug.checked.push(collDebug);
+            return { debug, result: { doc: d, collection: collName } };
           }
         }
+
         // deep inspect
         const found = extractTicketIdFromObject(d);
-        if (found && String(found).trim() === keyStr) { collDebug.matched = { by: 'deep_inspect', doc: { _id: String(d._id) } }; debug.checked.push(collDebug); return { debug, result: { doc: d, collection: collName } }; }
+        if (found && String(found).trim() === keyStr) {
+          collDebug.matched = { by: 'deep_inspect', doc: { _id: String(d._id) } };
+          debug.checked.push(collDebug);
+          return { debug, result: { doc: d, collection: collName } };
+        }
       }
       collDebug.steps.push({ step: 'scan_complete' });
     } catch (e) {
@@ -192,7 +255,7 @@ async function findTicketDetailed(ticketKey) {
   return { debug, result: null };
 }
 
-/* validate route (same as before) */
+/* validate route */
 router.post("/validate", express.json({ limit: "2mb" }), async (req, res) => {
   try {
     const incoming = req.body.ticketId !== undefined ? req.body.ticketId : req.body.raw;
@@ -203,7 +266,6 @@ router.post("/validate", express.json({ limit: "2mb" }), async (req, res) => {
 
     const fd = await findTicketDetailed(ticketKey);
     if (!fd || !fd.result) {
-      // return debug details if debug flag set via query param ?debug=1 or env
       const wantDebug = req.query.debug === '1' || process.env.DEBUG_TICKETS === 'true';
       if (wantDebug) return res.status(404).json({ success: false, error: "Ticket not found", debug: fd.debug });
       return res.status(404).json({ success: false, error: "Ticket not found" });
@@ -229,7 +291,7 @@ router.post("/validate", express.json({ limit: "2mb" }), async (req, res) => {
   }
 });
 
-/* scan route (unchanged behavior; debug via ?debug=1 returns diagnostics) */
+/* scan route */
 router.post("/scan", express.json({ limit: "2mb" }), async (req, res) => {
   try {
     const incoming = req.body.ticketId !== undefined ? req.body.ticketId : req.body.raw;
@@ -266,7 +328,7 @@ router.post("/scan", express.json({ limit: "2mb" }), async (req, res) => {
   }
 });
 
-/* debug-check endpoint: returns diagnostics without generating PDF */
+/* debug-check endpoint */
 router.post("/debug-check", express.json({ limit: "2mb" }), async (req, res) => {
   try {
     const incoming = req.body.ticketId !== undefined ? req.body.ticketId : req.body.raw;
