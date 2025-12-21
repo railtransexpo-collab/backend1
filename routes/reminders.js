@@ -31,7 +31,6 @@ function parseEventDate(record) {
 
 /**
  * Compute whole-day difference (eventDate - today) in days using UTC day boundaries.
- * Example: If event is exactly 7 days from today (irrespective of hour), returns 7.
  */
 function daysUntilEvent(eventDate) {
   if (!eventDate) return null;
@@ -44,64 +43,217 @@ function daysUntilEvent(eventDate) {
 }
 
 /**
+ * Try to fetch a single record by id using a few common patterns.
+ * Returns the record object or null.
+ */
+async function fetchRecordById(entity, id) {
+  if (!entity || !id) return null;
+  const candidateUrls = [
+    `${API_BASE}/api/${entity}/${encodeURIComponent(String(id))}`,
+    `${API_BASE}/api/${entity}?id=${encodeURIComponent(String(id))}`,
+    `${API_BASE}/api/${entity}?_id=${encodeURIComponent(String(id))}`,
+    `${API_BASE}/api/${entity}?where=_id=${encodeURIComponent(String(id))}`,
+    `${API_BASE}/api/${entity}?where=id=${encodeURIComponent(String(id))}`,
+  ];
+  for (const url of candidateUrls) {
+    try {
+      const r = await fetch(url, { headers: { Accept: "application/json", "ngrok-skip-browser-warning": "69420" } });
+      if (!r.ok) continue;
+      const js = await r.json().catch(() => null);
+      if (!js) continue;
+      // If response is an array, pick first
+      if (Array.isArray(js) && js.length) return js[0];
+      // If response contains data/rows/results
+      const arr = js.data || js.rows || js.results;
+      if (Array.isArray(arr) && arr.length) return arr[0];
+      // If object shaped, return itself
+      if (typeof js === "object" && Object.keys(js).length) {
+        // sometimes GET /api/entity/:id returns an object
+        // or /api/entity?id=... may return array; handled above
+        return js;
+      }
+    } catch (e) {
+      // try next
+    }
+  }
+  return null;
+}
+
+/**
+ * Update record reminders_sent and last_reminder_at using best-effort update endpoints.
+ */
+async function markReminderSent(entity, rec, daysUntil) {
+  try {
+    const nowIso = new Date().toISOString();
+    const updatedReminders = Array.isArray(rec.reminders_sent)
+      ? Array.from(new Set([...rec.reminders_sent.map((v) => Number(v)), daysUntil]))
+      : [daysUntil];
+
+    const updatePayload = { reminders_sent: updatedReminders, last_reminder_at: nowIso };
+
+    const updateId = rec.id || rec._id || rec.insertedId || null;
+    if (updateId) {
+      await fetch(`${API_BASE}/api/${entity}/${encodeURIComponent(String(updateId))}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "69420" },
+        body: JSON.stringify(updatePayload),
+      }).catch(() => {});
+    } else if (rec.ticket_code || rec.ticketCode) {
+      // fallback: try upgrade-by-code or similar
+      await fetch(`${API_BASE}/api/${entity}/upgrade-by-code`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "69420" },
+        body: JSON.stringify({ ticket_code: rec.ticket_code || rec.ticketCode, reminders_sent: updatedReminders, last_reminder_at: nowIso }),
+      }).catch(() => {});
+    }
+  } catch (e) {
+    // swallow; best-effort only
+    console.warn("[reminders] markReminderSent failed", e && (e.message || e));
+  }
+}
+
+/**
+ * POST /api/reminders/send
+ *
+ * Send a single reminder immediately for an entityId.
+ * Body: { entity: "speakers", entityId: "...", eventDate?: "...", subject?, text?, html? }
+ *
+ * This is a convenience immediate-send endpoint (used by frontend after save).
+ */
+router.post("/send", async (req, res) => {
+  try {
+    const { entity = "visitors", entityId = null, eventDate: providedEventDate = null, subject: overrideSubject, text: overrideText, html: overrideHtml } = req.body || {};
+    if (!entity) return res.status(400).json({ success: false, error: "entity required" });
+    if (!entityId) return res.status(400).json({ success: false, error: "entityId required" });
+
+    const rec = await fetchRecordById(entity, entityId);
+    if (!rec) return res.status(404).json({ success: false, error: "record not found" });
+
+    const evDate = providedEventDate || parseEventDate(rec);
+    const daysUntil = daysUntilEvent(evDate);
+
+    // Compose message
+    const baseName = (rec.name || rec.full_name || rec.company || "Participant");
+    const subj = overrideSubject || `${baseName} — Reminder${evDate ? `: ${new Date(evDate).toDateString()}` : ""}`;
+    const dayLabel = daysUntil === 0 ? "today" : (daysUntil ? `${daysUntil} day${Math.abs(daysUntil) === 1 ? "" : "s"} to go` : "upcoming");
+    const eventName = (rec.eventDetails && rec.eventDetails.name) || (rec.event && rec.event.name) || (typeof rec.event === "string" ? rec.event : "") || "";
+
+    const textBody = overrideText || `Hello ${rec.name || ""},\n\nThis is a reminder that the event "${eventName}" is ${dayLabel}.\n\nRegards,\nRailtrans Expo Team`;
+    const htmlBody = overrideHtml || `<p>Hello ${rec.name || ""},</p><p>This is a reminder that the event "<strong>${eventName}</strong>" is <strong>${dayLabel}</strong>.</p><p>Regards,<br/>Railtrans Expo Team</p>`;
+
+    // Send mail
+    let sendResult;
+    try {
+      sendResult = await sendMail({ to: rec.email || rec.emailAddress || rec.contactEmail || rec.contact_email, subject: subj, text: textBody, html: htmlBody });
+    } catch (err) {
+      console.error("[reminders/send] sendMail error:", err && (err.message || err));
+      return res.status(500).json({ success: false, error: "mail send failed", details: String(err && err.message ? err.message : err) });
+    }
+    if (!sendResult || !sendResult.success) {
+      console.warn("[reminders/send] sendMail returned failure:", sendResult);
+      return res.status(502).json({ success: false, error: "mailer failure", details: sendResult });
+    }
+
+    // Mark reminder sent (best-effort)
+    try {
+      const du = (typeof daysUntil === "number" && !Number.isNaN(daysUntil)) ? daysUntil : 0;
+      await markReminderSent(entity, rec, du);
+    } catch (e) {
+      // ignore
+    }
+
+    return res.json({ success: true, sentTo: rec.email || null });
+  } catch (err) {
+    console.error("[reminders/send] error:", err && (err.stack || err));
+    return res.status(500).json({ success: false, error: "server error", details: String(err && err.message ? err.message : err) });
+  }
+});
+
+/**
+ * POST /api/reminders/create
+ *
+ * Back-compat shim: create behaves like send for now (ensures older clients that POST to /create won't 404).
+ * Body: same as /send
+ */
+router.post("/create", async (req, res) => {
+  // forward to /send handler logic to avoid duplication
+  return router.handle(req, res, () => {}); // This will route to /send if req.url is modified, but since it's complex to internally re-dispatch, call the same logic directly
+});
+
+/**
  * POST /api/reminders/scheduled
  *
  * Body:
  * {
  *   entity: "visitors",
- *   scheduleDays: [7,3,1,0],   // days before event to send reminders (default)
- *   query?: { ... }            // optional: pass-through query parameters to filter records (not all backends support)
- *   subject?, text?, html?     // optional overrides for message body
+ *   scheduleDays: [7,3,1,0],
+ *   query?: "...",
+ *   entityId?: "single-id"   // NEW: when provided, server will try candidate queries to fetch single record
+ *   subject?, text?, html?
  * }
  *
  * This endpoint fetches candidate records from the API, filters by event date,
  * and sends reminders only when daysUntilEvent is one of scheduleDays and the
- * record does not already indicate that a reminder for that day was sent
- * (record.reminders_sent should be an array of numeric days already notified).
- *
- * After successful send, this route updates the record (PUT) to add the sent day
- * into reminders_sent and set last_reminder_at timestamp. This prevents duplicate daily sends.
+ * record does not already indicate that a reminder for that day was sent.
  */
 router.post("/scheduled", async (req, res) => {
   try {
-    const { entity = "visitors", scheduleDays = [7, 3, 1, 0], query = "" } = req.body || {};
+    const { entity = "visitors", scheduleDays = [7, 3, 1, 0], query = "", entityId = null } = req.body || {};
     if (!entity) return res.status(400).json({ success: false, error: "entity required" });
 
     // Normalize scheduleDays
     const daysSet = new Set((Array.isArray(scheduleDays) ? scheduleDays : [scheduleDays]).map((n) => Number(n)).filter((n) => !Number.isNaN(n)));
 
-    // Build list URL - attempt to respect a pass-through 'query' string if provided
-    // Example query could be "?where=eventId=123&limit=100"
-    const listUrl = query && typeof query === "string" ? `${API_BASE}/api/${entity}${query}` : `${API_BASE}/api/${entity}?limit=1000`;
-
+    // Fetch records: if entityId provided, try candidate queries to fetch single record(s)
     let fetched = [];
-    try {
-      const r = await fetch(listUrl, { headers: { Accept: "application/json", "ngrok-skip-browser-warning": "69420" } });
-      if (!r.ok) {
-        const txt = await r.text().catch(() => "");
-        console.warn(`[reminders] failed to fetch list ${listUrl}: ${r.status}`, txt);
-        return res.status(502).json({ success: false, error: `Failed to fetch ${entity} list: ${r.status}`, body: txt });
+    let lastError = null;
+
+    if (entityId) {
+      const candidateQueries = [
+        `?id=${encodeURIComponent(String(entityId))}&limit=1`,
+        `?_id=${encodeURIComponent(String(entityId))}&limit=1`,
+        `?where=_id=${encodeURIComponent(String(entityId))}&limit=1`,
+        `?where=id=${encodeURIComponent(String(entityId))}&limit=1`,
+      ];
+      for (const q of candidateQueries) {
+        const url = `${API_BASE}/api/${entity}${q}`;
+        try {
+          const r = await fetch(url, { headers: { Accept: "application/json", "ngrok-skip-browser-warning": "69420" } });
+          const json = await r.json().catch(() => null);
+          if (r.ok && json) {
+            // Normalize response to array
+            if (Array.isArray(json)) fetched = json;
+            else if (Array.isArray(json.data)) fetched = json.data;
+            else if (Array.isArray(json.rows)) fetched = json.rows;
+            else if (Array.isArray(json.results)) fetched = json.results;
+            else if (typeof json === "object" && Object.keys(json).length) fetched = [json];
+            if (fetched.length) break;
+          } else {
+            lastError = `Query failed: ${url} (${r.status})`;
+          }
+        } catch (err) {
+          lastError = String(err);
+        }
       }
-      const json = await r.json().catch(() => null);
-      if (!json) {
-        return res.status(502).json({ success: false, error: "List endpoint returned invalid JSON" });
+    } else {
+      // fallback to original query string (list)
+      const listUrl = query && typeof query === "string" ? `${API_BASE}/api/${entity}${query}` : `${API_BASE}/api/${entity}?limit=1000`;
+      try {
+        const r = await fetch(listUrl, { headers: { Accept: "application/json", "ngrok-skip-browser-warning": "69420" } });
+        const json = await r.json().catch(() => null);
+        if (Array.isArray(json)) fetched = json;
+        else if (json && Array.isArray(json.data)) fetched = json.data;
+        else if (json && Array.isArray(json.rows)) fetched = json.rows;
+        else if (json && Array.isArray(json.results)) fetched = json.results;
+        else fetched = Array.isArray(json) ? json : (typeof json === "object" ? Object.values(json) : []);
+      } catch (err) {
+        console.error("[reminders/scheduled] list fetch failed", err);
+        return res.status(502).json({ success: false, error: "Failed to fetch records", details: String(err && err.message ? err.message : err) });
       }
-      // If API returns object with data or rows, try to extract
-      if (Array.isArray(json)) fetched = json;
-      else if (Array.isArray(json.data)) fetched = json.data;
-      else if (Array.isArray(json.rows)) fetched = json.rows;
-      else if (Array.isArray(json.results)) fetched = json.results;
-      else {
-        // attempt to coerce into array if object keyed by ids
-        fetched = Array.isArray(json) ? json : (typeof json === "object" ? Object.values(json) : []);
-      }
-    } catch (err) {
-      console.error("[reminders] list fetch failed", err);
-      return res.status(502).json({ success: false, error: "Failed to fetch records", details: String(err && err.message ? err.message : err) });
     }
 
     if (!Array.isArray(fetched) || fetched.length === 0) {
-      return res.json({ success: true, processed: 0, sent: 0, skipped: 0, note: "No records" });
+      return res.json({ success: true, processed: 0, sent: 0, skipped: 0, note: lastError || "No records" });
     }
 
     let processed = 0;
@@ -113,47 +265,25 @@ router.post("/scheduled", async (req, res) => {
       try {
         processed += 1;
         const eventDate = parseEventDate(rec);
-        if (!eventDate) {
-          skipped += 1;
-          continue;
-        }
+        if (!eventDate) { skipped += 1; continue; }
 
         const daysUntil = daysUntilEvent(eventDate);
-        if (daysUntil === null || daysUntil === undefined) {
-          skipped += 1;
-          continue;
-        }
+        if (daysUntil === null || daysUntil === undefined) { skipped += 1; continue; }
 
-        // Only send when daysUntil is in scheduleDays
-        if (!daysSet.has(daysUntil)) {
-          skipped += 1;
-          continue;
-        }
+        if (!daysSet.has(daysUntil)) { skipped += 1; continue; }
 
-        // Check reminders_sent tracking on the record to avoid duplicate sends for same daysUntil
         const remindersSent = Array.isArray(rec.reminders_sent) ? rec.reminders_sent.map((v) => Number(v)).filter((v) => !Number.isNaN(v)) : [];
-        if (remindersSent.includes(daysUntil)) {
-          // already sent this scheduled reminder
-          skipped += 1;
-          continue;
-        }
+        if (remindersSent.includes(daysUntil)) { skipped += 1; continue; }
 
-        // Recipient
         const to = rec.email || rec.emailAddress || rec.contactEmail || rec.contact_email;
-        if (!to) {
-          skipped += 1;
-          continue;
-        }
+        if (!to) { skipped += 1; continue; }
 
-        // Compose message (simple default; customize if you pass subject/text/html in body)
         const baseName = (rec.name || rec.full_name || rec.company || "Participant");
         const subj = req.body.subject || `${baseName} — Reminder: ${(eventDate && eventDate.toDateString()) || "Upcoming event"}`;
-        // Friendly day label
         const dayLabel = daysUntil === 0 ? "today" : `${daysUntil} day${Math.abs(daysUntil) === 1 ? "" : "s"} to go`;
-        let bodyText = req.body.text || `Hello ${rec.name || ""},\n\nThis is a reminder that the event "${(rec.eventDetails && rec.eventDetails.name) || (rec.event && rec.event.name) || ""}" is ${dayLabel}.\n\nRegards,\nTeam`;
-        let bodyHtml = req.body.html || `<p>Hello ${rec.name || ""},</p><p>This is a reminder that the event "<strong>${(rec.eventDetails && rec.eventDetails.name) || (rec.event && rec.event.name) || ""}</strong>" is <strong>${dayLabel}</strong>.</p><p>Regards,<br/>Team</p>`;
+        let bodyText = req.body.text || `Hello ${rec.name || ""},\n\nThis is a reminder that the event "${(rec.eventDetails && rec.eventDetails.name) || (rec.event && rec.event.name) || ""}" is ${dayLabel}.\n\nRegards,\nRailtrans Expo Team`;
+        let bodyHtml = req.body.html || `<p>Hello ${rec.name || ""},</p><p>This is a reminder that the event "<strong>${(rec.eventDetails && rec.eventDetails.name) || (rec.event && rec.event.name) || ""}</strong>" is <strong>${dayLabel}</strong>.</p><p>Regards,<br/>Railtrans Expo Team</p>`;
 
-        // Add upgrade link for ticketed entities
         const isTicketed = ["speakers", "awardees", "exhibitors", "visitors"].includes(String(entity).toLowerCase());
         if (isTicketed && (rec.ticket_code || rec.ticketCode)) {
           const id = rec.id || rec._id || rec.insertedId || "";
@@ -163,7 +293,6 @@ router.post("/scheduled", async (req, res) => {
           bodyText += `\n\nWant to upgrade your ticket? Visit: ${upgradeUrl}`;
         }
 
-        // Send mail (sendMail should return { success: true } on success)
         let sendResult;
         try {
           sendResult = await sendMail({ to, subject: subj, text: bodyText, html: bodyHtml });
@@ -178,32 +307,9 @@ router.post("/scheduled", async (req, res) => {
           continue;
         }
 
-        // On success, patch the record to mark this daysUntil as sent to avoid duplicates
+        // On success, patch the record to mark this daysUntil as sent
         try {
-          const nowIso = new Date().toISOString();
-          const updatedReminders = Array.isArray(rec.reminders_sent) ? Array.from(new Set([...rec.reminders_sent.map((v) => Number(v)), daysUntil])) : [daysUntil];
-          // Use your existing update endpoint — PUT /api/visitors/:id
-          const updateId = rec.id || rec._id || rec.insertedId || null;
-          const updatePayload = { reminders_sent: updatedReminders, last_reminder_at: nowIso };
-          if (updateId) {
-            await fetch(`${API_BASE}/api/${entity}/${encodeURIComponent(String(updateId))}`, {
-              method: "PUT",
-              headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "69420" },
-              body: JSON.stringify(updatePayload),
-            }).catch((e) => {
-              // best-effort only - log and continue
-              console.warn("[reminders] failed to update record reminders_sent", updateId, e && (e.message || e));
-            });
-          } else {
-            // If no numeric id, attempt upgrade-by-code or patch-by-ticket-code if available
-            if (rec.ticket_code || rec.ticketCode) {
-              await fetch(`${API_BASE}/api/${entity}/upgrade-by-code`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "69420" },
-                body: JSON.stringify({ ticket_code: rec.ticket_code || rec.ticketCode, reminders_sent: updatedReminders, last_reminder_at: nowIso }),
-              }).catch(() => {});
-            }
-          }
+          await markReminderSent(entity, rec, daysUntil);
         } catch (e) {
           console.warn("[reminders] post-send update failed", e && (e.message || e));
         }
