@@ -126,6 +126,28 @@ ${ticket_code ? `<p><strong>Your ticket code:</strong> ${ticket_code}</p>` : ""}
  * attempt to send email server-side (prefer serverBuildTicketEmail if available),
  * return saved doc + mail result.
  */
+
+// GET /api/visitors
+router.get("/", async (req, res) => {
+  try {
+    const db = await obtainDb();
+    if (!db) return res.status(500).json({ success: false, message: "Database not available" });
+
+    const coll = db.collection("visitors");
+
+    // Optionally: add filters / pagination
+    const visitors = await coll
+      .find({})
+      .sort({ createdAt: -1 }) // latest first
+      .toArray();
+
+    return res.json({ success: true, data: visitors });
+  } catch (err) {
+    console.error("[visitors] GET error", err);
+    return res.status(500).json({ success: false, message: "Database error", details: err.message });
+  }
+});
+
 router.post("/", async (req, res) => {
   try {
     const db = await obtainDb();
