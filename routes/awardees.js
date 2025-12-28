@@ -277,45 +277,6 @@ router.post('/', async (req, res) => {
  * POST /api/awardees/:id/resend-email
  * Resend confirmation email for a saved awardee (admin action)
  */
-router.post('/:id/resend-email', async (req, res) => {
-  try {
-    const id = req.params.id;
-    if (!id) return res.status(400).json({ success: false, error: 'missing id' });
-
-    const db = await obtainDb();
-    if (!db) return res.status(500).json({ success: false, error: 'database not available' });
-
-    let oid;
-    try { oid = new ObjectId(id); } catch { return res.status(400).json({ success: false, error: 'invalid id' }); }
-
-    const doc = await db.collection('awardees').findOne({ _id: oid });
-    if (!doc) return res.status(404).json({ success: false, error: 'Awardee not found' });
-
-    let mailResult = null;
-    try {
-      const model = { frontendBase: process.env.FRONTEND_BASE || '', entity: 'awardees', id: String(doc._id || id), name: doc.name || '', ticket_code: doc.ticket_code || '', form: doc };
-      mailResult = await sendMailForAwardee({ email: doc.email, model, pdfBase64: null });
-    } catch (e) {
-      mailResult = { ok: false, error: String(e && (e.message || e)) };
-    }
-
-    // optionally notify admins as well
-    try {
-      const adminEnv = (process.env.AWARDEE_ADMIN_EMAILS || process.env.ADMIN_EMAILS || '');
-      const admins = adminEnv.split(',').map(s => s.trim()).filter(Boolean);
-      await Promise.all(admins.map(addr => mailer.sendMail({ to: addr, subject: `Awardee resend — ID: ${id}`, text: `Resent for awardee:\n${JSON.stringify(doc, null, 2)}`, html: `<pre>${JSON.stringify(doc, null, 2)}</pre>` }).catch(err => console.error('[awardees] admin resend notify error:', addr, err && (err.message || err)))));
-    } catch (e) {
-      /* ignore */
-    }
-
-    if (mailResult && mailResult.ok) return res.json({ success: true, mail: mailResult });
-    return res.status(500).json({ success: false, mail: mailResult || { ok: false, error: 'send failed' } });
-  } catch (err) {
-    console.error('[awardees] resend-email error:', err && (err.stack || err));
-    return res.status(500).json({ success: false, error: 'Server error resending email' });
-  }
-});
-
 /* ---------- Existing remaining routes kept (GET list, GET/:id, stats, confirm, put, upload-proof, delete) ---------- */
 
 /**

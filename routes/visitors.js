@@ -274,46 +274,6 @@ router.post("/", async (req, res) => {
   }
 });
 
-router.post('/:id/resend-email', async (req, res) => {
-  try {
-    const db = await obtainDb();
-    if (!db) {
-      return res.status(500).json({ ok: false, error: 'Database not available' });
-    }
-
-    const { id } = req.params;
-
-    const visitor = await db.collection('visitors').findOne({
-      _id: new require('mongodb').ObjectId(id),
-    });
-
-    if (!visitor) {
-      return res.status(404).json({ ok: false, error: 'Visitor not found' });
-    }
-
-    if (!visitor.email) {
-      return res.status(400).json({ ok: false, error: 'No email on record' });
-    }
-
-    // 🔹 call your existing mail helper
-    const mail = await sendRegistrationEmail({
-      to: visitor.email,
-      data: visitor,
-      type: 'visitor',
-    });
-
-    // optional: store mail status
-    await db.collection('visitors').updateOne(
-      { _id: visitor._id },
-      { $set: { last_mail: mail, last_mail_at: new Date() } }
-    );
-
-    return res.json({ ok: true, mail });
-  } catch (err) {
-    console.error('resend-email error', err);
-    return res.status(500).json({ ok: false, error: 'Failed to resend email' });
-  }
-});
 
 
 module.exports = router;
