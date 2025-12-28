@@ -161,6 +161,10 @@ const registrationConfigsRouter = (() => {
   }
 })();
 
+// --- Coupons router (new) ---
+let couponsRouter = null;
+try { couponsRouter = require('./routes/coupons'); } catch (e) { couponsRouter = null; if (e) console.warn('No coupons router found at ./routes/coupons.js'); }
+
 // --- Mount routes (always relative paths) ---
 // Visitors
 if (visitorsRouter) app.use('/api/visitors', visitorsRouter); else console.warn('No visitors router found');
@@ -202,6 +206,14 @@ if (awardeeConfigRouter) app.use('/api/awardee-config', awardeeConfigRouter);
 else {
   console.warn('No awardee-config router found - mounting fallback');
   app.get('/api/awardee-config', (req, res) => res.json({ fields: [], images: [], eventDetails: {} }));
+}
+
+// Coupons
+if (couponsRouter) {
+  app.use('/api/coupons', couponsRouter);
+  console.log('Mounted /api/coupons');
+} else {
+  console.warn('No coupons router found (routes/coupons.js missing)');
 }
 
 // Other API routes (mount if available)
@@ -303,7 +315,7 @@ app.use((err, req, res, next) => {
 });
 
 // --- Start server ---
-const PORT = process.env.PORT ;
+const PORT = process.env.PORT || 3000;
 
 (async function start() {
   try {
@@ -317,8 +329,6 @@ const PORT = process.env.PORT ;
         console.warn('Failed to connect to MongoDB:', err);
       }
     }
-
-    
 
     app.listen(PORT,"0.0.0.0", () => {
       console.log(`Server running at port ${PORT}`);
@@ -334,6 +344,7 @@ const PORT = process.env.PORT ;
       console.log(' - /api/otp ->', otpRouter ? 'mounted' : 'fallback/none');
       console.log(' - /api/mailer ->', emailRouter ? 'mounted' : 'fallback/none');
       console.log(' - /api/configs ->', configsRouter ? 'mounted' : 'fallback/none');
+      console.log(' - /api/coupons ->', couponsRouter ? 'mounted' : 'fallback/none');
       if (process.env.REACT_APP_API_BASE_URL) console.log('Front-end API base env:', process.env.REACT_APP_API_BASE_URL);
     });
   } catch (e) {

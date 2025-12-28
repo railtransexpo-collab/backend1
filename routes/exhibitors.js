@@ -43,7 +43,7 @@ function docToOutput(doc) {
  * Subject per request set to "Hello Adarsh Shah,".
  */
 function buildExhibitorAckEmail({ name = '' } = {}) {
-  const subject = 'Hello Adarsh Shah,'; // per your instruction
+  const subject = 'exhibitors request response,'; // per your instruction
   const text = `Hello ${name},
 
 Thank you for showing your interest and choosing to be a part of RailTrans Expo. We truly appreciate your decision to connect with us and explore exhibiting opportunities at our platform.
