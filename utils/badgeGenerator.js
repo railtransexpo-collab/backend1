@@ -159,15 +159,18 @@ function drawHeader(doc) {
     ? mandapamLeftEdge - 10
     : C.PAGE.width - 8;
   const monthMaxWidth = 120;
-  const monthBlockX = dp.monthX;
+
   const monthBlockY = dp.monthY;
-  const monthBlockWidth = 78;
+  const monthBlockWidth = 70;
+
+  // PERFECT CENTER BETWEEN DATES & MANDAPAM
+  const monthBlockX = 255;
 
   doc
     .fillColor("#000000")
     .font("Helvetica-Bold")
     .fontSize(18)
-    .text("JULY", monthBlockX + 8, monthBlockY + 2, {
+    .text("JULY", monthBlockX, 30, {
       width: monthBlockWidth,
       align: "center",
       lineBreak: false,
@@ -177,7 +180,7 @@ function drawHeader(doc) {
     .fillColor("#000000")
     .font("Helvetica-Bold")
     .fontSize(18)
-    .text("2026", monthBlockX, monthBlockY + 24, {
+    .text("2026", monthBlockX, 58, {
       width: monthBlockWidth,
       align: "center",
       lineBreak: false,
