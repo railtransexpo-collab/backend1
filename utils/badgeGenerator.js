@@ -171,8 +171,8 @@ function drawHeader(doc) {
   doc
     .fillColor("#000000")
     .font("Helvetica-Bold")
-    .fontSize(18)
-    .text("2026", dp.monthX + 8, dp.monthY + 28);
+    .fontSize(12)
+    .text("2026", dp.monthX + 8, dp.monthY + 20);
   // Bharat Mandapam logo — top-right
   safeImage(doc, C.MANDAPAM.path, C.MANDAPAM.x, C.MANDAPAM.y, C.MANDAPAM.width);
 
@@ -323,7 +323,7 @@ function drawFooter(doc) {
   const labelWidth = doc.widthOfString(org.label) + 50;
 
   const labelX = centerX - labelWidth / 2;
-  const labelY = 420;
+  const labelY = 412;
 
   drawPill(
     doc,
@@ -340,7 +340,7 @@ function drawFooter(doc) {
   // LOGO (perfect center + spacing)
   const logoWidth = 120;
   const logoX = centerX - logoWidth / 2;
-  const logoY = labelY + 36;
+  const logoY = labelY + 22;
 
   safeImage(doc, org.logoPath, logoX, logoY, logoWidth);
 }
