@@ -168,10 +168,11 @@ function drawHeader(doc) {
       lineBreak: false,
     });
   doc
-    .fillColor("#000000")
-    .font("Helvetica-Bold")
-    .fontSize(10)
-   .text("2026", dp.monthX + 8, dp.monthY + 28);
+   doc
+  .fillColor("#000000")
+  .font("Helvetica-Bold")
+  .fontSize(10)
+  .text("2026", dp.monthX + 8, dp.monthY + 28);
   // Bharat Mandapam logo — top-right
   safeImage(doc, C.MANDAPAM.path, C.MANDAPAM.x, C.MANDAPAM.y, C.MANDAPAM.width);
 
