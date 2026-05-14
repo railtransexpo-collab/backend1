@@ -167,12 +167,12 @@ function drawHeader(doc) {
       width: monthMaxWidth,
       lineBreak: false,
     });
+  doc;
   doc
-   doc
-  .fillColor("#000000")
-  .font("Helvetica-Bold")
-  .fontSize(10)
-  .text("2026", dp.monthX + 8, dp.monthY + 28);
+    .fillColor("#000000")
+    .font("Helvetica-Bold")
+    .fontSize(18)
+    .text("2026", dp.monthX + 8, dp.monthY + 28);
   // Bharat Mandapam logo — top-right
   safeImage(doc, C.MANDAPAM.path, C.MANDAPAM.x, C.MANDAPAM.y, C.MANDAPAM.width);
 
@@ -305,8 +305,7 @@ async function drawQRCard(doc, ticketCode, entity, mode, name, company) {
       .font("Helvetica-Bold") // Make company bold too
       .fontSize(C.TEXT_AREA.companyFontSize);
 
-    // Position company below name with spacing
-    const companyY = textStartY + nameHeight + 10;
+    const companyY = textStartY + nameHeight + 2;
 
     doc.text(company, qc.x + 15, companyY, {
       width: qc.width - 30,
@@ -324,7 +323,7 @@ function drawFooter(doc) {
   const labelWidth = doc.widthOfString(org.label) + 50;
 
   const labelX = centerX - labelWidth / 2;
-  const labelY = 410;
+  const labelY = 420;
 
   drawPill(
     doc,
@@ -341,7 +340,7 @@ function drawFooter(doc) {
   // LOGO (perfect center + spacing)
   const logoWidth = 120;
   const logoX = centerX - logoWidth / 2;
-  const logoY = labelY + 30;
+  const logoY = labelY + 36;
 
   safeImage(doc, org.logoPath, logoX, logoY, logoWidth);
 }

@@ -74,7 +74,7 @@ const DATE_PILLS = {
     fontSize: 18 
   },
   // Add breathing room from the Mandapam logo and keep alignment clean
-  monthX: 258,
+  monthX: 245,
   monthY: 34,
   // Venue sits under the Mandapam logo with some gap
   venueY: 70,
