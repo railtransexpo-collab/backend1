@@ -161,13 +161,13 @@ function drawHeader(doc) {
   const monthMaxWidth = 120;
   const monthBlockX = dp.monthX;
   const monthBlockY = dp.monthY;
-const monthBlockWidth = 82;
+  const monthBlockWidth = 58;
 
   doc
     .fillColor("#000000")
     .font("Helvetica-Bold")
-    .fontSize(17)
-    .text("JULY", monthBlockX, monthBlockY+1, {
+    .fontSize(16)
+    .text("JULY", monthBlockX, monthBlockY , {
       width: monthBlockWidth,
       align: "center",
       lineBreak: false,
@@ -176,8 +176,8 @@ const monthBlockWidth = 82;
   doc
     .fillColor("#000000")
     .font("Helvetica-Bold")
-    .fontSize(17)
-    .text("2026", monthBlockX, monthBlockY + 20, {
+    .fontSize(16)
+    .text("2026", monthBlockX, monthBlockY + 18, {
       width: monthBlockWidth,
       align: "center",
       lineBreak: false,
