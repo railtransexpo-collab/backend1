@@ -159,20 +159,29 @@ function drawHeader(doc) {
     ? mandapamLeftEdge - 10
     : C.PAGE.width - 8;
   const monthMaxWidth = 120;
+  const monthBlockX = dp.monthX;
+  const monthBlockY = dp.monthY;
+  const monthBlockWidth = 70;
+
   doc
     .fillColor("#000000")
     .font("Helvetica-Bold")
     .fontSize(18)
-    .text("JULY", dp?.monthX ?? 0, dp?.monthY ?? 0, {
-      width: monthMaxWidth,
+    .text("JULY", monthBlockX, monthBlockY, {
+      width: monthBlockWidth,
+      align: "center",
       lineBreak: false,
     });
-  doc;
+
   doc
     .fillColor("#000000")
     .font("Helvetica-Bold")
-    .fontSize(12)
-    .text("2026", dp.monthX + 8, dp.monthY + 20);
+    .fontSize(18)
+    .text("2026", monthBlockX, monthBlockY + 22, {
+      width: monthBlockWidth,
+      align: "center",
+      lineBreak: false,
+    });
   // Bharat Mandapam logo — top-right
   safeImage(doc, C.MANDAPAM.path, C.MANDAPAM.x, C.MANDAPAM.y, C.MANDAPAM.width);
 
