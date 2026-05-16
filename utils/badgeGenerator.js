@@ -161,16 +161,21 @@ function drawHeader(doc) {
   const monthMaxWidth = 120;
 
   const monthBlockY = dp.monthY;
-  const monthBlockWidth = 70;
 
-  // PERFECT CENTER BETWEEN DATES & MANDAPAM
-  const monthBlockX = 255;
+  const monthBlockWidth = 80;
+
+  // CENTER BETWEEN DATE PILLS AND MANDAPAM LOGO
+  const datesRight = dp.pill2.x + dp.pill2.width;
+  const mandapamLeft = C.MANDAPAM.x;
+
+  const monthBlockX =
+    datesRight + (mandapamLeft - datesRight - monthBlockWidth) / 2;
 
   doc
     .fillColor("#000000")
     .font("Helvetica-Bold")
-    .fontSize(18)
-    .text("JULY", monthBlockX, 30, {
+    .fontSize(19)
+    .text("JULY", monthBlockX, 28, {
       width: monthBlockWidth,
       align: "center",
       lineBreak: false,
@@ -179,8 +184,8 @@ function drawHeader(doc) {
   doc
     .fillColor("#000000")
     .font("Helvetica-Bold")
-    .fontSize(18)
-    .text("2026", monthBlockX, 58, {
+    .fontSize(19)
+    .text("2026", monthBlockX, 56, {
       width: monthBlockWidth,
       align: "center",
       lineBreak: false,
@@ -356,6 +361,7 @@ function drawFooter(doc) {
 
   safeImage(doc, org.logoPath, logoX, logoY, logoWidth);
 }
+
 function drawRibbon(doc, themeColor, ribbonLabel) {
   const R = C.RIBBON;
 
@@ -377,13 +383,156 @@ function drawRibbon(doc, themeColor, ribbonLabel) {
     });
 }
 
+// ── Scan-only lightweight PDF ─────────────────────────────────────────────────
+
+async function generateScanBadgePDF(data) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const ticketCode =
+        data?.ticket_code || data?.ticketCode || data?.data?.ticket_code;
+      if (!ticketCode) throw new Error("ticket_code missing");
+
+      const name =
+        (
+          data.name ||
+          data.full_name ||
+          (data.firstName
+            ? `${data.firstName} ${data.lastName || ""}`.trim()
+            : "") ||
+          data.fullName ||
+          ""
+        )
+          .trim()
+          .toUpperCase() || "GUEST";
+
+      let company = (
+        data.company ||
+        data.organization ||
+        data.companyName ||
+        data.company_name ||
+        data.org ||
+        data.employer ||
+        data.affiliation ||
+        data?.data?.company ||
+        data?.data?.organization ||
+        data?.data?.companyName ||
+        ""
+      )
+        .trim()
+        .toUpperCase();
+
+      if (company === "NULL" || company === "UNDEFINED") company = "";
+
+      // Card dimensions — portrait, roughly A8-ish
+      const W = 220;
+      const H = 300;
+
+      const doc = new PDF({ size: [W, H], margin: 0 });
+      const buffers = [];
+      doc.on("data", (b) => buffers.push(b));
+      doc.on("end", () => resolve(Buffer.concat(buffers)));
+
+      // ── Background ──
+      doc.rect(0, 0, W, H).fill("#FFFFFF");
+
+      // ── Outer border ──
+      doc.roundedRect(6, 6, W - 12, H - 12, 8).stroke("#1B3A8A");
+
+      // ── Top accent bar ──
+      doc.rect(6, 6, W - 12, 28).fill("#1B3A8A");
+
+      // ── Event label in accent bar ──
+      doc
+        .fillColor("#FFFFFF")
+        .font("Helvetica-Bold")
+        .fontSize(7.5)
+        .text("RailTrans Expo 2026", 0, 15, {
+          width: W,
+          align: "center",
+          lineBreak: false,
+        });
+
+      // ── QR Code ──
+      const qrSize = 130;
+      const qrX = (W - qrSize) / 2;
+      const qrY = 44;
+
+      const qrDataUrl = await QRCode.toDataURL(ticketCode, {
+        errorCorrectionLevel: "H",
+        margin: 0,
+        width: qrSize * 4,
+      });
+      const qrBuf = Buffer.from(qrDataUrl.split(",")[1], "base64");
+      doc.image(qrBuf, qrX, qrY, { width: qrSize });
+
+      // ── Ticket code below QR ──
+      doc
+        .fillColor("#999999")
+        .font("Helvetica")
+        .fontSize(6.5)
+        .text(ticketCode, 0, qrY + qrSize + 5, {
+          width: W,
+          align: "center",
+          lineBreak: false,
+        });
+
+      // ── Divider ──
+      const divY = qrY + qrSize + 20;
+      doc
+        .moveTo(24, divY)
+        .lineTo(W - 24, divY)
+        .lineWidth(0.5)
+        .stroke("#CCCCCC");
+
+      // ── Name ──
+      const nameY = divY + 14;
+      doc.fillColor("#1B3A8A").font("Helvetica-Bold").fontSize(14);
+
+      const nameH = doc.heightOfString(name, {
+        width: W - 28,
+        align: "center",
+      });
+
+      doc.text(name, 14, nameY, {
+        width: W - 28,
+        align: "center",
+        lineBreak: true,
+      });
+
+      // ── Company ──
+      if (company) {
+        doc
+          .fillColor("#444444")
+          .font("Helvetica-Bold")
+          .fontSize(8.5)
+          .text(company, 14, nameY + nameH + 5, {
+            width: W - 28,
+            align: "center",
+            lineBreak: true,
+          });
+      }
+
+      doc.end();
+    } catch (err) {
+      console.error("[generateScanBadgePDF] error:", err);
+      reject(err);
+    }
+  });
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function generateBadgePDF(entity, data, options = {}) {
+  const { mode = "email" } = options;
+
+  // ── Scan mode: return lightweight card (QR + name + company only) ──
+  if (mode === "scan") {
+    return generateScanBadgePDF(data);
+  }
+
+  // ── All other modes: full branded badge ──
   return new Promise(async (resolve, reject) => {
     try {
-      const { mode = "email" } = options;
-
       const ticketCode =
         data?.ticket_code || data?.ticketCode || data?.data?.ticket_code;
       if (!ticketCode) throw new Error("ticket_code missing");
