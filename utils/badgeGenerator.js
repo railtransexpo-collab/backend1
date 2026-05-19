@@ -30,7 +30,6 @@ async function getCachedQR(text, size) {
   return buffer;
 }
 
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function safeImage(doc, filePath, x, y, width, extraOpts = {}) {
@@ -55,7 +54,13 @@ function safeImage(doc, filePath, x, y, width, extraOpts = {}) {
   for (const p of candidates) {
     if (fs.existsSync(p)) {
       try {
-        doc.image(p, x, y, { width, ...extraOpts });
+        doc.image(p, x, y, {
+          width,
+          width,
+          compress: true,
+          quality: 0.7,
+          ...extraOpts,
+        });
         return true;
       } catch (_) {}
     }
@@ -530,7 +535,12 @@ async function generateBadgePDF(entity, data, options = {}) {
 
       console.log(`[${ribbonLabel}] ${data.name || "(no name)"}`);
 
-      const doc = new PDF({ size: [C.PAGE.width, C.PAGE.height], margin: 0 });
+      const doc = new PDF({
+        size: [C.PAGE.width, C.PAGE.height],
+        margin: 0,
+        compress: true,
+        pdfVersion: "1.4",
+      });
       const buffers = [];
       doc.on("data", (b) => buffers.push(b));
       doc.on("end", () => resolve(Buffer.concat(buffers)));
