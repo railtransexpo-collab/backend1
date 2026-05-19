@@ -383,8 +383,6 @@ function drawRibbon(doc, themeColor, ribbonLabel) {
     });
 }
 
-// ── Scan-only lightweight PDF ─────────────────────────────────────────────────
-
 async function generateScanBadgePDF(data) {
   return new Promise(async (resolve, reject) => {
     try {
@@ -423,7 +421,7 @@ async function generateScanBadgePDF(data) {
 
       if (company === "NULL" || company === "UNDEFINED") company = "";
 
-      // Card dimensions — portrait, roughly A8-ish
+      // Card dimensions 
       const W = 220;
       const H = 300;
 
@@ -435,27 +433,13 @@ async function generateScanBadgePDF(data) {
       // ── Background ──
       doc.rect(0, 0, W, H).fill("#FFFFFF");
 
-      // ── Outer border ──
+      // ── Outer blue border only (NO filled top bar) ──
       doc.roundedRect(6, 6, W - 12, H - 12, 8).stroke("#1B3A8A");
 
-      // ── Top accent bar ──
-      doc.rect(6, 6, W - 12, 28).fill("#1B3A8A");
-
-      // ── Event label in accent bar ──
-      doc
-        .fillColor("#FFFFFF")
-        .font("Helvetica-Bold")
-        .fontSize(7.5)
-        .text("RailTrans Expo 2026", 0, 15, {
-          width: W,
-          align: "center",
-          lineBreak: false,
-        });
-
-      // ── QR Code ──
+      // ── QR Code (moved up since we removed the top bar) ──
       const qrSize = 130;
       const qrX = (W - qrSize) / 2;
-      const qrY = 44;
+      const qrY = 20; // Moved up from 44 to 20 since there's no top bar
 
       const qrDataUrl = await QRCode.toDataURL(ticketCode, {
         errorCorrectionLevel: "H",
@@ -465,19 +449,8 @@ async function generateScanBadgePDF(data) {
       const qrBuf = Buffer.from(qrDataUrl.split(",")[1], "base64");
       doc.image(qrBuf, qrX, qrY, { width: qrSize });
 
-      // ── Ticket code below QR ──
-      doc
-        .fillColor("#999999")
-        .font("Helvetica")
-        .fontSize(6.5)
-        .text(ticketCode, 0, qrY + qrSize + 5, {
-          width: W,
-          align: "center",
-          lineBreak: false,
-        });
-
-      // ── Divider ──
-      const divY = qrY + qrSize + 20;
+      // ── Divider line ──
+      const divY = qrY + qrSize + 16;
       doc
         .moveTo(24, divY)
         .lineTo(W - 24, divY)
@@ -519,7 +492,6 @@ async function generateScanBadgePDF(data) {
     }
   });
 }
-
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function generateBadgePDF(entity, data, options = {}) {
