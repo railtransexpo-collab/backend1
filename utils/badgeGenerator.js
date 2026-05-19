@@ -7,6 +7,30 @@ const QRCode = require("qrcode");
 const getBadgeTheme = require("./badgeTheme");
 const C = require("./badgeConfig");
 
+// QR Code cache for faster generation
+const qrCache = new Map();
+
+async function getCachedQR(text, size) {
+  const key = `${text}_${size}`;
+  if (qrCache.has(key)) return qrCache.get(key);
+
+  const qrDataUrl = await QRCode.toDataURL(text, {
+    errorCorrectionLevel: "M",
+    margin: 0,
+    width: size,
+  });
+
+  const buffer = Buffer.from(qrDataUrl.split(",")[1], "base64");
+
+  if (qrCache.size > 50) {
+    qrCache.clear();
+  }
+
+  qrCache.set(key, buffer);
+  return buffer;
+}
+
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function safeImage(doc, filePath, x, y, width, extraOpts = {}) {
@@ -279,12 +303,7 @@ async function drawQRCard(doc, ticketCode, entity, mode, name, company) {
     mode === "scan"
       ? ticketCode
       : JSON.stringify({ ticket_code: ticketCode, entity });
-  const qrDataUrl = await QRCode.toDataURL(qrPayload, {
-    errorCorrectionLevel: "H",
-    margin: 0, // 🔥 THIS FIXES WHITESPACE
-    width: C.QR.size * 4,
-  });
-  const qrBuf = Buffer.from(qrDataUrl.split(",")[1], "base64");
+  const qrBuf = await getCachedQR(qrPayload, C.QR.size * 2);
 
   const qrX = qc.x + (qc.width - C.QR.size) / 2;
   const qrY = qc.y + 20; // Adjusted for larger QR
@@ -391,15 +410,7 @@ async function generateScanBadgePDF(data) {
       if (!ticketCode) throw new Error("ticket_code missing");
 
       const name =
-        (
-          data.name ||
-          data.full_name ||
-          (data.firstName
-            ? `${data.firstName} ${data.lastName || ""}`.trim()
-            : "") ||
-          data.fullName ||
-          ""
-        )
+        (data.name || data.full_name || data.fullName || "")
           .trim()
           .toUpperCase() || "GUEST";
 
@@ -407,49 +418,36 @@ async function generateScanBadgePDF(data) {
         data.company ||
         data.organization ||
         data.companyName ||
-        data.company_name ||
-        data.org ||
-        data.employer ||
-        data.affiliation ||
-        data?.data?.company ||
-        data?.data?.organization ||
-        data?.data?.companyName ||
         ""
       )
         .trim()
         .toUpperCase();
-
       if (company === "NULL" || company === "UNDEFINED") company = "";
 
-      // Card dimensions 
       const W = 220;
       const H = 300;
 
-      const doc = new PDF({ size: [W, H], margin: 0 });
+      // Enable compression for faster delivery
+      const doc = new PDF({ size: [W, H], margin: 0, compress: true });
       const buffers = [];
       doc.on("data", (b) => buffers.push(b));
       doc.on("end", () => resolve(Buffer.concat(buffers)));
 
-      // ── Background ──
+      // Background
       doc.rect(0, 0, W, H).fill("#FFFFFF");
 
-      // ── Outer blue border only (NO filled top bar) ──
+      // Outer blue border
       doc.roundedRect(6, 6, W - 12, H - 12, 8).stroke("#1B3A8A");
 
-      // ── QR Code (moved up since we removed the top bar) ──
+      // QR Code - use cached version with smaller multiplier
       const qrSize = 130;
       const qrX = (W - qrSize) / 2;
-      const qrY = 20; // Moved up from 44 to 20 since there's no top bar
+      const qrY = 20;
 
-      const qrDataUrl = await QRCode.toDataURL(ticketCode, {
-        errorCorrectionLevel: "H",
-        margin: 0,
-        width: qrSize * 4,
-      });
-      const qrBuf = Buffer.from(qrDataUrl.split(",")[1], "base64");
+      const qrBuf = await getCachedQR(ticketCode, qrSize * 2); // 2x instead of 4x
       doc.image(qrBuf, qrX, qrY, { width: qrSize });
 
-      // ── Divider line ──
+      // Divider
       const divY = qrY + qrSize + 16;
       doc
         .moveTo(24, divY)
@@ -457,7 +455,7 @@ async function generateScanBadgePDF(data) {
         .lineWidth(0.5)
         .stroke("#CCCCCC");
 
-      // ── Name ──
+      // Name
       const nameY = divY + 14;
       doc.fillColor("#1B3A8A").font("Helvetica-Bold").fontSize(14);
 
@@ -465,24 +463,20 @@ async function generateScanBadgePDF(data) {
         width: W - 28,
         align: "center",
       });
-
       doc.text(name, 14, nameY, {
         width: W - 28,
         align: "center",
         lineBreak: true,
       });
 
-      // ── Company ──
+      // Company
       if (company) {
-        doc
-          .fillColor("#444444")
-          .font("Helvetica-Bold")
-          .fontSize(8.5)
-          .text(company, 14, nameY + nameH + 5, {
-            width: W - 28,
-            align: "center",
-            lineBreak: true,
-          });
+        doc.fillColor("#444444").font("Helvetica-Bold").fontSize(8.5);
+        doc.text(company, 14, nameY + nameH + 5, {
+          width: W - 28,
+          align: "center",
+          lineBreak: true,
+        });
       }
 
       doc.end();
@@ -492,8 +486,6 @@ async function generateScanBadgePDF(data) {
     }
   });
 }
-// ── Main ──────────────────────────────────────────────────────────────────────
-
 async function generateBadgePDF(entity, data, options = {}) {
   const { mode = "email" } = options;
 
