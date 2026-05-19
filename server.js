@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const cors = require('cors');
 
+const compression = require('compression');
 const app = express();
 
 // --- Ensure uploads directory exists ---
@@ -87,20 +88,34 @@ app.use((req, res, next) => {
   console.log(`[REQ] ${new Date().toISOString()} ${req.method} ${req.originalUrl}`);
   next();
 });
+// --- Compression for faster responses ---
 
+app.use(compression({
+  filter: (req, res) => {
+    // Compress everything except already-compressed formats
+    if (req.headers['x-no-compression']) return false;
+    return compression.filter(req, res);
+  },
+  level: 6, // Balance between speed and compression
+}));
 // --- Connect to Mongo (if used) ---
 let mongoClient = null;
 try { mongoClient = require('./utils/mongoClient'); } catch (e) { mongoClient = null; }
 
-// --- helper obtainDb for in-file small endpoints (supports mongoClient.getDb() or .db) ---
-async function obtainDb() {
-  if (!mongoClient) return null;
+let cachedDb = null;
 
+async function obtainDb() {
+  if (cachedDb) return cachedDb;
+  if (!mongoClient) return null;
   try {
     if (typeof mongoClient.getDb === 'function') {
-      return mongoClient.getDb(); // sync, may throw
+      cachedDb = await mongoClient.getDb();
+      return cachedDb;
     }
-    if (mongoClient.db) return mongoClient.db;
+    if (mongoClient.db) {
+      cachedDb = mongoClient.db;
+      return cachedDb;
+    }
     return null;
   } catch (err) {
     console.warn('[obtainDb] Mongo not ready:', err.message);
@@ -263,7 +278,12 @@ if (couponsRouter) {
 // Other API routes (mount if available)
 if (otpRouter) app.use('/api/otp', otpRouter);
 if (paymentRouter) app.use('/api/payment', paymentRouter);
-app.use(express.json({ limit: '20mb' }));
+// Default small limit for most routes
+app.use(express.json({ limit: '1mb' }));
+
+// Larger limit only for upload routes
+app.use('/api/upload', express.json({ limit: '20mb' }));
+app.use('/api/image', express.json({ limit: '20mb' }));
 
 app.use(express.urlencoded({
   extended: true,
