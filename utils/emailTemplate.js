@@ -8,6 +8,7 @@
  * ✅ Professional responsive design
  * ✅ FIXED:  Download URLs use query params (? entity=visitors&id=xxx)
  * ✅ UPGRADE SUPPORT: Shows upgrade messaging when isUpgrade=true
+ * ✅ UPGRADE BUTTON: Only shown for Visitors and Delegates (not Partners, Exhibitors, Speakers, Awardees)
  */
 
 function getEventFromForm(form) {
@@ -40,6 +41,8 @@ function determineRoleLabel(visitor = {}, explicitTicketCategory = "") {
   if (explicitTicketCategory && String(explicitTicketCategory).trim()) {
     const c = String(explicitTicketCategory).trim().toLowerCase();
     if (c.includes("partner")) return "PARTNER";
+    if (c.includes("exhibitor")) return "EXHIBITOR";
+    if (c.includes("speaker")) return "SPEAKER";
     if (c.includes("award")) return "AWARDEE";
     if (/(delegate|vip|combo|paid)/i.test(c)) return "DELEGATE";
   }
@@ -48,6 +51,8 @@ function determineRoleLabel(visitor = {}, explicitTicketCategory = "") {
 
   const ent = String(visitor.entity || visitor.role || visitor.type || "").toLowerCase();
   if (ent.includes("partner")) return "PARTNER";
+  if (ent.includes("exhibitor")) return "EXHIBITOR";
+  if (ent.includes("speaker")) return "SPEAKER";
   if (ent.includes("award")) return "AWARDEE";
 
   const total = Number(visitor.ticket_total || visitor.total || visitor.amount || visitor.price || 0) || 0;
@@ -55,10 +60,14 @@ function determineRoleLabel(visitor = {}, explicitTicketCategory = "") {
 
   const cat = String(visitor.ticket_category || visitor.ticketCategory || visitor.category || "").toLowerCase();
   if (cat.includes("partner")) return "PARTNER";
+  if (cat.includes("exhibitor")) return "EXHIBITOR";
+  if (cat.includes("speaker")) return "SPEAKER";
   if (cat.includes("award")) return "AWARDEE";
   if (/(delegate|vip|combo|paid)/i.test(cat)) return "DELEGATE";
 
   if (visitor.isPartner || visitor.partner) return "PARTNER";
+  if (visitor.isExhibitor || visitor.exhibitor) return "EXHIBITOR";
+  if (visitor.isSpeaker || visitor.speaker) return "SPEAKER";
   if (visitor.isAwardee || visitor.awardee) return "AWARDEE";
 
   return "VISITOR";
@@ -69,8 +78,16 @@ function getParticipantTypeLabel(entity, roleLabel) {
   if (entity === "visitors" || roleLabel === "VISITOR") return "Visitor";
   if (roleLabel === "DELEGATE") return "Delegate";
   if (roleLabel === "PARTNER") return "Partner";
+  if (roleLabel === "EXHIBITOR") return "Exhibitor";
+  if (roleLabel === "SPEAKER") return "Speaker";
   if (roleLabel === "AWARDEE") return "Awardee";
   return "Participant";
+}
+
+function canUpgrade(roleLabel, entity) {
+  // Only Visitors and Delegates can upgrade
+  const upgradableRoles = ["VISITOR", "DELEGATE"];
+  return upgradableRoles.includes(roleLabel) || entity === "visitors" || entity === "delegates";
 }
 
 async function buildTicketEmail({
@@ -123,12 +140,6 @@ async function buildTicketEmail({
 
   console.log("[emailTemplate] Download URL:", resolvedDownload);
 
-  // ✅ Frontend upgrade URL
-  if (!resolvedUpgrade) {
-    const ticketCode = form?.ticket_code || "";
-    resolvedUpgrade = `${effectiveFrontend}/ticket-upgrade?entity=${encodeURIComponent(entity)}&${id ? `id=${encodeURIComponent(String(id))}` : `ticket_code=${encodeURIComponent(ticketCode)}`}`;
-  }
-
   // ✅ Check if this is an upgrade email
   const isUpgrade = form?.isUpgrade || false;
   const previousCategory = form?.previousCategory || null;
@@ -136,8 +147,23 @@ async function buildTicketEmail({
   const effectiveTicketCategory = ticket_category || (form && (form.ticket_category || form.category)) || "";
   const roleLabel = determineRoleLabel(form || {}, effectiveTicketCategory);
   const participantType = getParticipantTypeLabel(entity, roleLabel);
+  
+  // ✅ Determine if this participant type can upgrade
+  const showUpgradeOption = canUpgrade(roleLabel, entity);
 
-  console.log("[emailTemplate] Upgrade:", { isUpgrade, previousCategory, roleLabel });
+  // ✅ Frontend upgrade URL - only generate if upgrade is possible
+  if (!resolvedUpgrade && showUpgradeOption) {
+    const ticketCode = form?.ticket_code || "";
+    resolvedUpgrade = `${effectiveFrontend}/ticket-upgrade?entity=${encodeURIComponent(entity)}&${id ? `id=${encodeURIComponent(String(id))}` : `ticket_code=${encodeURIComponent(ticketCode)}`}`;
+  }
+
+  console.log("[emailTemplate] Upgrade:", { 
+    isUpgrade, 
+    previousCategory, 
+    roleLabel, 
+    participantType,
+    showUpgradeOption 
+  });
   console.log("[emailTemplate] ========================================");
 
   // ✅ Dynamic subject based on registration type and upgrade status
@@ -148,10 +174,25 @@ async function buildTicketEmail({
     subject = `Registration Confirmed – ${participantType} E-Badge for 6th RailTrans Expo 2026`;
   }
 
-  // ✅ Dynamic intro based on upgrade
-  const introText = isUpgrade
-    ? `Great news! Your registration has been successfully upgraded${previousCategory ? ` from ${previousCategory}` : ""} to ${participantType}.`
-    : `Thank you for registering to ${roleLabel === "VISITOR" ? "visit" : "participate in"} the 6th Edition of RailTrans Expo 2026, scheduled to be held on 3rd & 4th July 2026 at Bharat Mandapam, New Delhi.`;
+  // ✅ Dynamic intro based on registration type
+  let introText;
+  if (isUpgrade) {
+    introText = `Great news! Your registration has been successfully upgraded${previousCategory ? ` from ${previousCategory}` : ""} to ${participantType}.`;
+  } else if (roleLabel === "VISITOR") {
+    introText = `Thank you for registering to visit the 6th Edition of RailTrans Expo 2026, scheduled to be held on 3rd & 4th July 2026 at Bharat Mandapam, New Delhi.`;
+  } else if (roleLabel === "DELEGATE") {
+    introText = `Thank you for registering as a Delegate for the 6th Edition of RailTrans Expo 2026, scheduled to be held on 3rd & 4th July 2026 at Bharat Mandapam, New Delhi.`;
+  } else if (roleLabel === "EXHIBITOR") {
+    introText = `Thank you for participating as an Exhibitor at the 6th Edition of RailTrans Expo 2026, scheduled to be held on 3rd & 4th July 2026 at Bharat Mandapam, New Delhi.`;
+  } else if (roleLabel === "PARTNER") {
+    introText = `Thank you for partnering with us for the 6th Edition of RailTrans Expo 2026, scheduled to be held on 3rd & 4th July 2026 at Bharat Mandapam, New Delhi.`;
+  } else if (roleLabel === "SPEAKER") {
+    introText = `Thank you for participating as a Speaker at the 6th Edition of RailTrans Expo 2026, scheduled to be held on 3rd & 4th July 2026 at Bharat Mandapam, New Delhi.`;
+  } else if (roleLabel === "AWARDEE") {
+    introText = `Congratulations on being selected as an Awardee for the 6th Edition of RailTrans Expo 2026, scheduled to be held on 3rd & 4th July 2026 at Bharat Mandapam, New Delhi.`;
+  } else {
+    introText = `Thank you for registering to participate in the 6th Edition of RailTrans Expo 2026, scheduled to be held on 3rd & 4th July 2026 at Bharat Mandapam, New Delhi.`;
+  }
 
   // Build plain text version
   const text = [
@@ -169,7 +210,7 @@ async function buildTicketEmail({
     company ? `Company: ${company}` : "",
     "",
     `Download your ${isUpgrade ? "updated " : ""}E-Badge: ${resolvedDownload}`,
-    resolvedUpgrade ? `Upgrade your registration: ${resolvedUpgrade}` : "",
+    showUpgradeOption && resolvedUpgrade ? `Upgrade your registration: ${resolvedUpgrade}` : "",
     "",
     "Event Details:",
     `Event: ${ev.name}`,
@@ -216,6 +257,11 @@ async function buildTicketEmail({
   ]
     .filter(Boolean)
     .join("\n");
+
+  // ✅ Generate upgrade button HTML only if applicable
+  const upgradeButtonHtml = (showUpgradeOption && resolvedUpgrade) 
+    ? `<a href="${resolvedUpgrade}" class="cta-outline" target="_blank" rel="noopener noreferrer">⬆️ Upgrade Registration</a>`
+    : "";
 
   const html = `<!doctype html>
     <html>
@@ -316,6 +362,11 @@ async function buildTicketEmail({
             font-size: 13px; 
             font-weight: 500;
           }
+          .meta-badge-highlight {
+            background: #dbeafe;
+            color: #1e40af;
+            border-color: #93c5fd;
+          }
           .meta-badge-upgraded {
             background: #dcfce7;
             color: #166534;
@@ -352,7 +403,7 @@ async function buildTicketEmail({
             transform: translateY(-2px);
           }
           
-          /* ✅ BLUE UPGRADE BUTTON (Secondary Action) */
+          /* ✅ BLUE UPGRADE BUTTON (Secondary Action - Only for Visitors & Delegates) */
           .cta-outline { 
             display: inline-block; 
             padding: 16px 32px; 
@@ -513,10 +564,7 @@ async function buildTicketEmail({
     
             <p class="intro">
               <strong>Greetings from RailTrans Expo 2026!</strong><br/><br/>
-              ${isUpgrade
-                ? `Great news! Your registration has been successfully upgraded${previousCategory ? ` from <strong>${previousCategory}</strong>` : ""} to <strong>${participantType}</strong>.`
-                : `Thank you for registering to ${roleLabel === "VISITOR" ? "visit" : "participate in"} the <strong>6th Edition of RailTrans Expo 2026</strong>, scheduled to be held on <strong>3rd & 4th July 2026 at Bharat Mandapam, New Delhi</strong>.`
-              }
+              ${introText}
             </p>
     
             ${isUpgrade ? `
@@ -536,7 +584,7 @@ async function buildTicketEmail({
               <div class="card-title">${name || "Participant"}${company ? ` • ${company}` : ""}</div>
     
               <div class="meta-row">
-                ${roleLabel ? `<div class="meta-badge">${roleLabel}</div>` : ""}
+                ${roleLabel ? `<div class="meta-badge meta-badge-highlight">${roleLabel}</div>` : ""}
                 ${isUpgrade ? `<div class="meta-badge meta-badge-upgraded">UPGRADED</div>` : ""}
               </div>
     
@@ -546,7 +594,7 @@ async function buildTicketEmail({
                 <a href="${resolvedDownload}" class="cta" target="_blank" rel="noopener noreferrer">
                   📥 Download ${participantType} E-Badge
                 </a>
-                ${resolvedUpgrade ? `<a href="${resolvedUpgrade}" class="cta-outline" target="_blank" rel="noopener noreferrer">⬆️ Upgrade Registration</a>` : ""}
+                ${upgradeButtonHtml}
               </div>
             </div>
     
