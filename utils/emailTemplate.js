@@ -15,7 +15,6 @@ function getEventFromForm(form) {
   const out = { name: "", dates: "", time: "", venue: "", tagline: "" };
   if (!form || typeof form !== "object") return out;
 
-  // Check for eventDetails object first
   if (form.eventDetails && typeof form.eventDetails === "object") {
     const ed = form.eventDetails;
     return {
@@ -27,7 +26,6 @@ function getEventFromForm(form) {
     };
   }
 
-  // Fallback to form-level fields
   out.name = form.eventName || form.event_name || form.eventTitle || "";
   out.dates = form.eventDates || form.event_dates || form.dates || form.date || "";
   out.time = form.eventTime || form.event_time || form.time || "";
@@ -74,7 +72,6 @@ function determineRoleLabel(visitor = {}, explicitTicketCategory = "") {
 }
 
 function getParticipantTypeLabel(entity, roleLabel) {
-  // Return appropriate label based on entity and role
   if (entity === "visitors" || roleLabel === "VISITOR") return "Visitor";
   if (roleLabel === "DELEGATE") return "Delegate";
   if (roleLabel === "PARTNER") return "Partner";
@@ -85,7 +82,6 @@ function getParticipantTypeLabel(entity, roleLabel) {
 }
 
 function canUpgrade(roleLabel, entity) {
-  // Only Visitors and Delegates can upgrade
   const upgradableRoles = ["VISITOR", "DELEGATE"];
   return upgradableRoles.includes(roleLabel) || entity === "visitors" || entity === "delegates";
 }
@@ -125,10 +121,8 @@ async function buildTicketEmail({
   console.log("[emailTemplate] Entity:", entity);
   console.log("[emailTemplate] ID:", id);
 
-  // ✅ Use passed event details (no fetch)
   const ev = getEventFromForm(form);
 
-  // Use default values if nothing provided
   if (!ev.name) ev.name = "6th RailTrans Expo 2026";
   if (!ev.dates) ev.dates = "3rd & 4th July 2026";
   if (!ev.time) ev.time = "";
@@ -140,7 +134,6 @@ async function buildTicketEmail({
 
   console.log("[emailTemplate] Download URL:", resolvedDownload);
 
-  // ✅ Check if this is an upgrade email
   const isUpgrade = form?.isUpgrade || false;
   const previousCategory = form?.previousCategory || null;
 
@@ -148,10 +141,8 @@ async function buildTicketEmail({
   const roleLabel = determineRoleLabel(form || {}, effectiveTicketCategory);
   const participantType = getParticipantTypeLabel(entity, roleLabel);
   
-  // ✅ Determine if this participant type can upgrade
   const showUpgradeOption = canUpgrade(roleLabel, entity);
 
-  // ✅ Frontend upgrade URL - only generate if upgrade is possible
   if (!resolvedUpgrade && showUpgradeOption) {
     const ticketCode = form?.ticket_code || "";
     resolvedUpgrade = `${effectiveFrontend}/ticket-upgrade?entity=${encodeURIComponent(entity)}&${id ? `id=${encodeURIComponent(String(id))}` : `ticket_code=${encodeURIComponent(ticketCode)}`}`;
@@ -166,15 +157,15 @@ async function buildTicketEmail({
   });
   console.log("[emailTemplate] ========================================");
 
-  // ✅ Dynamic subject based on registration type and upgrade status
+  // ✅ SUBJECT - without "E-Badge"
   let subject;
   if (isUpgrade) {
-    subject = `Registration Upgraded – ${participantType} E-Badge for 6th RailTrans Expo 2026`;
+    subject = `Registration Upgraded – ${participantType} for 6th RailTrans Expo 2026`;
   } else {
-    subject = `Registration Confirmed – ${participantType} E-Badge for 6th RailTrans Expo 2026`;
+    subject = `Registration Confirmed – ${participantType} for 6th RailTrans Expo 2026`;
   }
 
-  // ✅ Dynamic intro based on registration type
+  // ✅ INTRO TEXT
   let introText;
   if (isUpgrade) {
     introText = `Great news! Your registration has been successfully upgraded${previousCategory ? ` from ${previousCategory}` : ""} to ${participantType}.`;
@@ -194,7 +185,7 @@ async function buildTicketEmail({
     introText = `Thank you for registering to participate in the 6th Edition of RailTrans Expo 2026, scheduled to be held on 3rd & 4th July 2026 at Bharat Mandapam, New Delhi.`;
   }
 
-  // Build plain text version
+  // ✅ PLAIN TEXT VERSION
   const text = [
     `Dear ${name || "Participant"},`,
     "",
@@ -202,11 +193,8 @@ async function buildTicketEmail({
     "",
     introText,
     "",
-    `We are pleased to confirm your registration. Please find attached your ${participantType} e-Badge, which will enable your entry to the exhibition venue.`,
+    `We are pleased to confirm your registration. Your ${participantType} e-Badge download link is provided below. This e-Badge will enable your entry to the exhibition venue.`,
     "",
-    isUpgrade ? `Previous Category: ${previousCategory}` : "",
-    roleLabel ? `${isUpgrade ? "New " : ""}Registration Type: ${roleLabel}` : "",
-    entity ? `Category: ${entity}` : "",
     company ? `Company: ${company}` : "",
     "",
     `Download your ${isUpgrade ? "updated " : ""}E-Badge: ${resolvedDownload}`,
@@ -229,15 +217,15 @@ async function buildTicketEmail({
     "2. Entry for Four-Wheelers",
     "   Entry for visitors arriving by four-wheelers will be provided through Gate No. 1 of Bharat Mandapam.",
     "",
-    "3. E-Badge & Physical Badge Collection",
-    "   All visitors are requested to show their e-Badge to the security personnel at the venue entry point.",
-    "   The physical printed badge will be issued from the Registration Desk located at the main entrance of RailTrans Expo 2026.",
+    "3. Visitor e-Badge & Physical Badge Collection",
+    "   • All visitors are requested to show their Visitor e-Badge to the security personnel at the venue entry point.",
+    "   • The physical printed Visitor Badge will be issued from the Registration Desk located at the main entrance of RailTrans Expo 2026.",
     "",
     "4. Mandatory Identity Proof",
     "   All visitors must carry a valid government-issued identity proof such as:",
-    "   - Aadhaar Card",
-    "   - Passport (mandatory for foreign nationals)",
-    "   - Driving License / Voter ID (if applicable)",
+    "   • Aadhaar Card",
+    "   • Passport (mandatory for foreign nationals)",
+    "   • Driving License / Voter ID (if applicable)",
     "",
     "5. Venue Protocols & Security Guidelines",
     "   All visitors are requested to strictly follow the protocols, safety guidelines, and operational norms prescribed by ITPO and the organizers of RailTrans Expo 2026.",
@@ -245,24 +233,25 @@ async function buildTicketEmail({
     "We look forward to welcoming you to Asia's leading exhibition and conference for the railway and transportation industry.",
     "",
     "For any assistance, please feel free to contact us at:",
-    "support@railtransexpo.com",
-    "Contact: +91 9211675505 / 8527599895",
-    "www.railtransexpo.com",
+    "📧 support@railtransexpo.com",
+    "📞 +91 9211675505 / 8527599895",
+    "🌐 www.railtransexpo.com",
     "",
-    "Warm regards,",
+    "Warm Regards,",
     "Team RailTrans Expo 2026",
-    "Urban Infra Group",
+    "Urban Infra Communications Pvt. Ltd.",
     "Bharat Mandapam, New Delhi",
-    "3–4 July 2026",
+    "3rd–4th July 2026",
   ]
     .filter(Boolean)
     .join("\n");
 
-  // ✅ Generate upgrade button HTML only if applicable
+  // ✅ UPGRADE BUTTON
   const upgradeButtonHtml = (showUpgradeOption && resolvedUpgrade) 
-    ? `<a href="${resolvedUpgrade}" class="cta-outline" target="_blank" rel="noopener noreferrer">⬆️ Upgrade Registration</a>`
+    ? `<a href="${resolvedUpgrade}" class="cta-outline" target="_blank" rel="noopener noreferrer">⬆️ Upgradation</a>`
     : "";
 
+  // ✅ HTML VERSION
   const html = `<!doctype html>
     <html>
       <head>
@@ -380,8 +369,6 @@ async function buildTicketEmail({
             margin-top: 24px; 
             flex-wrap: wrap; 
           }
-          
-          /* ✅ RED DOWNLOAD BUTTON (Primary Action) */
           .cta { 
             display: inline-block; 
             padding: 16px 32px; 
@@ -402,8 +389,6 @@ async function buildTicketEmail({
             box-shadow: 0 6px 8px rgba(220, 38, 38, 0.4);
             transform: translateY(-2px);
           }
-          
-          /* ✅ BLUE UPGRADE BUTTON (Secondary Action - Only for Visitors & Delegates) */
           .cta-outline { 
             display: inline-block; 
             padding: 16px 32px; 
@@ -424,7 +409,6 @@ async function buildTicketEmail({
             box-shadow: 0 6px 8px rgba(37, 99, 235, 0.4);
             transform: translateY(-2px);
           }
-          
           .section { 
             margin-top: 28px; 
           }
@@ -491,13 +475,14 @@ async function buildTicketEmail({
             counter-reset: item;
           }
           .guidelines ol li {
-            margin-bottom: 12px;
+            margin-bottom: 14px;
             display: block;
           }
           .guidelines ol li strong {
             color: #92400e;
             display: block;
             margin-bottom: 4px;
+            font-size: 15px;
           }
           .guidelines ul {
             padding-left: 20px;
@@ -507,7 +492,8 @@ async function buildTicketEmail({
             list-style-type: disc;
           }
           .guidelines ul li {
-            margin-bottom: 4px;
+            margin-bottom: 6px;
+            line-height: 1.5;
           }
           .footer { 
             margin-top: 32px; 
@@ -532,8 +518,6 @@ async function buildTicketEmail({
             margin: 4px 0;
             color: #475569;
           }
-          
-          /* Mobile Responsive */
           @media (max-width: 600px) {
             .container { margin: 20px 12px; }
             .content { padding: 24px 16px; }
@@ -577,7 +561,7 @@ async function buildTicketEmail({
             ` : ""}
     
             <p style="color: #4b5563; font-size: 15px;">
-              We are pleased to confirm your registration. Please find attached your <strong>${participantType} e-Badge</strong>, which will enable your entry to the exhibition venue.
+              We are pleased to confirm your registration. Your <strong>${participantType} e-Badge</strong> download link is provided below. This e-Badge will enable your entry to the exhibition venue.
             </p>
     
             <div class="card">
@@ -592,7 +576,7 @@ async function buildTicketEmail({
     
               <div class="button-row">
                 <a href="${resolvedDownload}" class="cta" target="_blank" rel="noopener noreferrer">
-                  📥 Download ${participantType} E-Badge
+                  📥 Download ${participantType} Badge
                 </a>
                 ${upgradeButtonHtml}
               </div>
@@ -640,16 +624,18 @@ async function buildTicketEmail({
                 </li>
                 <li>
                   <strong>Visitor e-Badge & Physical Badge Collection</strong>
-                  All visitors are requested to show their <strong>Visitor e-Badge</strong> to the security personnel at the venue entry point.
-                  <br/>The <strong>physical printed Visitor Badge</strong> will be issued from the <strong>Registration Desk</strong> located at the main entrance of RailTrans Expo 2026.
+                  <ul>
+                    <li>All visitors are requested to show their <strong>Visitor e-Badge</strong> to the security personnel at the venue entry point.</li>
+                    <li>The <strong>physical printed Visitor Badge</strong> will be issued from the <strong>Registration Desk</strong> located at the main entrance of RailTrans Expo 2026.</li>
+                  </ul>
                 </li>
                 <li>
                   <strong>Mandatory Identity Proof</strong>
                   All visitors must carry a valid government-issued identity proof such as:
                   <ul>
-                    <li>Aadhaar Card</li>
-                    <li>Passport (mandatory for foreign nationals)</li>
-                    <li>Driving License / Voter ID (if applicable)</li>
+                    <li><strong>Aadhaar Card</strong></li>
+                    <li><strong>Passport</strong> (mandatory for foreign nationals)</li>
+                    <li><strong>Driving License / Voter ID</strong> (if applicable)</li>
                   </ul>
                 </li>
                 <li>
@@ -665,16 +651,16 @@ async function buildTicketEmail({
               <div class="contact-info">
                 <p style="font-weight: 600; color: #0b4f60;">For any assistance, please feel free to contact us at:</p>
                 <p>📧 <a href="mailto:support@railtransexpo.com" style="color: #0b4f60; font-weight: 600;">support@railtransexpo.com</a></p>
-                <p>📞 Contact: +91 9211675505 / 8527599895</p>
+                <p>📞 +91 9211675505 / 8527599895</p>
                 <p>🌐 <a href="https://www.railtransexpo.com" target="_blank" rel="noopener noreferrer" style="color: #0b4f60; font-weight: 600;">www.railtransexpo.com</a></p>
               </div>
               
               <p style="margin-top: 20px;">
-                <strong>Warm regards,</strong><br/>
+                <strong>Warm Regards,</strong><br/>
                 <strong>Team RailTrans Expo 2026</strong><br/>
-                Urban Infra Group<br/>
+                Urban Infra Communications Pvt. Ltd.<br/>
                 Bharat Mandapam, New Delhi<br/>
-                3–4 July 2026
+                3rd–4th July 2026
               </p>
             </div>
           </div>
