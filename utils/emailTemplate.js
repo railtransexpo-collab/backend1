@@ -27,7 +27,8 @@ function getEventFromForm(form) {
   }
 
   out.name = form.eventName || form.event_name || form.eventTitle || "";
-  out.dates = form.eventDates || form.event_dates || form.dates || form.date || "";
+  out.dates =
+    form.eventDates || form.event_dates || form.dates || form.date || "";
   out.time = form.eventTime || form.event_time || form.time || "";
   out.venue = form.eventVenue || form.event_venue || form.venue || "";
   out.tagline = form.eventTagline || form.tagline || "";
@@ -47,16 +48,27 @@ function determineRoleLabel(visitor = {}, explicitTicketCategory = "") {
 
   if (!visitor || typeof visitor !== "object") return "VISITOR";
 
-  const ent = String(visitor.entity || visitor.role || visitor.type || "").toLowerCase();
+  const ent = String(
+    visitor.entity || visitor.role || visitor.type || "",
+  ).toLowerCase();
   if (ent.includes("partner")) return "PARTNER";
   if (ent.includes("exhibitor")) return "EXHIBITOR";
   if (ent.includes("speaker")) return "SPEAKER";
   if (ent.includes("award")) return "AWARDEE";
 
-  const total = Number(visitor.ticket_total || visitor.total || visitor.amount || visitor.price || 0) || 0;
+  const total =
+    Number(
+      visitor.ticket_total ||
+        visitor.total ||
+        visitor.amount ||
+        visitor.price ||
+        0,
+    ) || 0;
   if (!Number.isNaN(total) && total > 0) return "DELEGATE";
 
-  const cat = String(visitor.ticket_category || visitor.ticketCategory || visitor.category || "").toLowerCase();
+  const cat = String(
+    visitor.ticket_category || visitor.ticketCategory || visitor.category || "",
+  ).toLowerCase();
   if (cat.includes("partner")) return "PARTNER";
   if (cat.includes("exhibitor")) return "EXHIBITOR";
   if (cat.includes("speaker")) return "SPEAKER";
@@ -83,7 +95,11 @@ function getParticipantTypeLabel(entity, roleLabel) {
 
 function canUpgrade(roleLabel, entity) {
   const upgradableRoles = ["VISITOR", "DELEGATE"];
-  return upgradableRoles.includes(roleLabel) || entity === "visitors" || entity === "delegates";
+  return (
+    upgradableRoles.includes(roleLabel) ||
+    entity === "visitors" ||
+    entity === "delegates"
+  );
 }
 
 async function buildTicketEmail({
@@ -104,13 +120,13 @@ async function buildTicketEmail({
   form = { ...(form || {}), entity };
   if (!frontendBase || !backendBase) {
     throw new Error(
-      "[emailTemplate] frontendBase and backendBase are REQUIRED"
+      "[emailTemplate] frontendBase and backendBase are REQUIRED",
     );
   }
-  
+
   const effectiveFrontend = frontendBase.replace(/\/$/, "");
   const effectiveBackend = backendBase.replace(/\/$/, "");
-  
+
   const resolvedDownload = downloadUrl
     ? downloadUrl
     : `${effectiveBackend}/api/tickets/download?entity=${encodeURIComponent(entity)}&id=${encodeURIComponent(id)}`;
@@ -137,10 +153,11 @@ async function buildTicketEmail({
   const isUpgrade = form?.isUpgrade || false;
   const previousCategory = form?.previousCategory || null;
 
-  const effectiveTicketCategory = ticket_category || (form && (form.ticket_category || form.category)) || "";
+  const effectiveTicketCategory =
+    ticket_category || (form && (form.ticket_category || form.category)) || "";
   const roleLabel = determineRoleLabel(form || {}, effectiveTicketCategory);
   const participantType = getParticipantTypeLabel(entity, roleLabel);
-  
+
   const showUpgradeOption = canUpgrade(roleLabel, entity);
 
   if (!resolvedUpgrade && showUpgradeOption) {
@@ -148,12 +165,12 @@ async function buildTicketEmail({
     resolvedUpgrade = `${effectiveFrontend}/ticket-upgrade?entity=${encodeURIComponent(entity)}&${id ? `id=${encodeURIComponent(String(id))}` : `ticket_code=${encodeURIComponent(ticketCode)}`}`;
   }
 
-  console.log("[emailTemplate] Upgrade:", { 
-    isUpgrade, 
-    previousCategory, 
-    roleLabel, 
+  console.log("[emailTemplate] Upgrade:", {
+    isUpgrade,
+    previousCategory,
+    roleLabel,
     participantType,
-    showUpgradeOption 
+    showUpgradeOption,
   });
   console.log("[emailTemplate] ========================================");
 
@@ -198,7 +215,9 @@ async function buildTicketEmail({
     company ? `Company: ${company}` : "",
     "",
     `Download your ${isUpgrade ? "updated " : ""}E-Badge: ${resolvedDownload}`,
-    showUpgradeOption && resolvedUpgrade ? `Upgrade your registration: ${resolvedUpgrade}` : "",
+    showUpgradeOption && resolvedUpgrade
+      ? `Upgrade your registration: ${resolvedUpgrade}`
+      : "",
     "",
     "Event Details:",
     `Event: ${ev.name}`,
@@ -247,9 +266,10 @@ async function buildTicketEmail({
     .join("\n");
 
   // ✅ UPGRADE BUTTON
-  const upgradeButtonHtml = (showUpgradeOption && resolvedUpgrade) 
-    ? `<a href="${resolvedUpgrade}" class="cta-outline" target="_blank" rel="noopener noreferrer">⬆️ Upgradation</a>`
-    : "";
+  const upgradeButtonHtml =
+    showUpgradeOption && resolvedUpgrade
+      ? `<a href="${resolvedUpgrade}" class="cta-outline" target="_blank" rel="noopener noreferrer">⬆️ Upgradation</a>`
+      : "";
 
   // ✅ HTML VERSION
   const html = `<!doctype html>
@@ -474,27 +494,65 @@ async function buildTicketEmail({
             font-size: 14px;
             counter-reset: item;
           }
-          .guidelines ol li {
-            margin-bottom: 14px;
-            display: block;
-          }
-          .guidelines ol li strong {
-            color: #92400e;
-            display: block;
-            margin-bottom: 4px;
-            font-size: 15px;
-          }
-          .guidelines ul {
-            padding-left: 20px;
-            color: #78350f;
-            margin: 4px 0 0 0;
-            font-size: 13px;
-            list-style-type: disc;
-          }
-          .guidelines ul li {
-            margin-bottom: 6px;
-            line-height: 1.5;
-          }
+         .guidelines ol {
+  padding-left: 22px;
+  color: #78350f;
+  margin: 0;
+  font-size: 14px;
+}
+
+.guidelines { 
+  margin-top: 28px; 
+  background: #fef3c7;
+  border-left: 4px solid #f59e0b;
+  padding: 16px 20px;
+  border-radius: 6px;
+}
+.guidelines-title { 
+  margin: 0 0 16px 0; 
+  color: #92400e; 
+  font-size: 16px;
+  font-weight: 700;
+}
+.guidelines-list {
+  padding-left: 24px; 
+  color: #78350f; 
+  margin: 0;
+  font-size: 13px;
+  counter-reset: item;
+}
+.guidelines-list li {
+  margin-bottom: 14px;
+  display: block;
+}
+.guidelines-list li strong {
+  color: #92400e;
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.guidelines-list li p {
+  margin: 0 0 6px 0;
+  line-height: 1.5;
+}
+.guidelines-list ul {
+  padding-left: 18px;
+  color: #78350f;
+  margin: 6px 0 0 0;
+  font-size: 12px;
+  list-style-type: disc;
+}
+.guidelines-list ul li {
+  margin-bottom: 5px;
+  line-height: 1.5;
+  display: list-item;
+}
+.guidelines-list ul li strong {
+  display: inline;
+  font-size: 12px;
+  margin-bottom: 0;
+}
           .footer { 
             margin-top: 32px; 
             padding-top: 24px;
@@ -551,14 +609,18 @@ async function buildTicketEmail({
               ${introText}
             </p>
     
-            ${isUpgrade ? `
+            ${
+              isUpgrade
+                ? `
             <div class="upgrade-banner">
               <div class="upgrade-banner-title">✅ Upgrade Successful!</div>
               <div class="upgrade-banner-text">
                 Previous: ${previousCategory} → New: ${participantType}
               </div>
             </div>
-            ` : ""}
+            `
+                : ""
+            }
     
             <p style="color: #4b5563; font-size: 15px;">
               We are pleased to confirm your registration. Your <strong>${participantType} e-Badge</strong> download link is provided below. This e-Badge will enable your entry to the exhibition venue.
@@ -599,12 +661,16 @@ async function buildTicketEmail({
                 <div class="info-label">Dates:</div>
                 <div class="info-value"><strong>${ev.dates}</strong></div>
               </div>
-              ${ev.time ? `
+              ${
+                ev.time
+                  ? `
               <div class="info-row">
                 <div class="info-label">Time:</div>
                 <div class="info-value">${ev.time}</div>
               </div>
-              ` : ""}
+              `
+                  : ""
+              }
               <div class="info-row">
                 <div class="info-label">Venue:</div>
                 <div class="info-value"><strong>${ev.venue}</strong></div>
