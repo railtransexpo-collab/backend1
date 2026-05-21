@@ -681,22 +681,22 @@ async function buildTicketEmail({
               <h4 class="guidelines-title">⚠️ Important Visitor Instructions</h4>
               <ol>
                 <li>
-                  <strong>Entry for Foot Visitors</strong>
-                  Entry for visitors arriving on foot will be provided through <strong>Gate No. 10 of Bharat Mandapam</strong>, which is the nearest gate from the <strong>Supreme Court Metro Station</strong>.
+                  <strong>Entry for Foot Visitors:</strong>
+                  Entry for visitors arriving on foot will be provided through <strong>Gate No. 10 of Bharat Mandapam</strong>, which is the nearest gate from the <strong>Supreme Court Metro Station</strong>. Exhibition halls are located in <strong>Hall No. 8, 9 & 10</strong>.
                 </li>
                 <li>
-                  <strong>Entry for Four-Wheelers</strong>
+                  <strong>Entry for Four-Wheelers: </strong>
                   Entry for visitors arriving by four-wheelers will be provided through <strong>Gate No. 1 of Bharat Mandapam</strong>.
                 </li>
                 <li>
-                  <strong>Visitor e-Badge & Physical Badge Collection</strong>
+                  <strong>Visitor e-Badge & Physical Badge Collection:</strong>
                   <ul>
                     <li>All visitors are requested to show their <strong>Visitor e-Badge</strong> to the security personnel at the venue entry point.</li>
                     <li>The <strong>physical printed Visitor Badge</strong> will be issued from the <strong>Registration Desk</strong> located at the main entrance of RailTrans Expo 2026.</li>
                   </ul>
                 </li>
                 <li>
-                  <strong>Mandatory Identity Proof</strong>
+                  <strong>Mandatory Identity Proof:</strong>
                   All visitors must carry a valid government-issued identity proof such as:
                   <ul>
                     <li><strong>Aadhaar Card</strong></li>
@@ -705,7 +705,7 @@ async function buildTicketEmail({
                   </ul>
                 </li>
                 <li>
-                  <strong>Venue Protocols & Security Guidelines</strong>
+                  <strong>Venue Protocols & Security Guidelines:</strong>
                   All visitors are requested to strictly follow the protocols, safety guidelines, and operational norms prescribed by <strong>ITPO</strong> and the organizers of <strong>RailTrans Expo 2026</strong>.
                 </li>
               </ol>
