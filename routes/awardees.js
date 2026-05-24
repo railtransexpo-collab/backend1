@@ -204,7 +204,7 @@ router.post('/', express.json(), async (req, res) => {
       data: form,
       createdAt: new Date(),       // ✅
       updatedAt: new Date(),       // ✅
-      added_by_admin: addedByAdmin,
+      
     };
 
     // ✅ ADD ALL DYNAMIC FIELDS from form
@@ -420,8 +420,7 @@ router.get('/', async (req, res) => {
     if (!db) return res.status(500).json({ error: 'database not available' });
            const rows = await db.collection('awardees').find({}).sort({ createdAt: -1 }).limit(limit).toArray();
     
-    // ✅ Flatten: merge data object fields to root level
-    const flattened = rows.map(r => {
+     const flattened = rows.map(r => {
       const flat = { ...r };
       if (flat.data && typeof flat.data === 'object') {
         for (const [key, value] of Object.entries(flat.data)) {
@@ -430,7 +429,11 @@ router.get('/', async (req, res) => {
           }
         }
       }
-      return docToOutput(flat);
+      // ✅ Ensure dates are serialized as ISO strings
+      const output = docToOutput(flat);
+      if (output.createdAt instanceof Date) output.createdAt = output.createdAt.toISOString();
+      if (output.updatedAt instanceof Date) output.updatedAt = output.updatedAt.toISOString();
+      return output;
     });
     
     return res.json(convertBigIntForJson(flattened));
