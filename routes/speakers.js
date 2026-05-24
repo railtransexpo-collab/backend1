@@ -124,12 +124,13 @@ router.post('/', async (req, res) => {
     // ✅ Extract company from various fields
     const company = payload.company || payload.organization || payload.employer || payload.affiliation || '';
 
+     // ✅ Build doc with ALL fields from payload
     const doc = {
       name: payload.name || payload.fullName || '',
       email: email,
       mobile: payload.mobile || payload.phone || '',
       designation: payload.designation || '',
-      company: company || '',  // ✅ Root level company
+      company: company || '',
       ticket_category: 'speaker',
       slots: Array.isArray(payload.slots) ? payload.slots : [],
       category: payload.category || '',
@@ -140,6 +141,22 @@ router.post('/', async (req, res) => {
       added_by_admin: !!payload.added_by_admin,
       admin_created_at: payload.added_by_admin ? new Date(payload.admin_created_at || Date.now()) : undefined,
     };
+
+    // ✅ ADD ALL DYNAMIC FIELDS from payload
+    const skipKeys = new Set([
+      'name', 'fullName', 'email', 'mobile', 'phone', 'designation',
+      'company', 'organization', 'employer', 'affiliation',
+      'ticket_category', 'slots', 'category', 'txId', 'txid',
+      'other_details', 'otherDetails', 'added_by_admin', 'admin_created_at',
+      'verificationToken', 'ticket_code', 'ticketCode', 'termsAccepted',
+      '_rawForm', 'registered_at'
+    ]);
+
+    for (const [key, value] of Object.entries(payload)) {
+      if (!skipKeys.has(key) && value !== undefined && value !== null && value !== '') {
+        doc[key] = value;
+      }
+    }
 
     doc.ticket_code = (payload.ticket_code || payload.ticketCode) ? String(payload.ticket_code || payload.ticketCode) : generateTicketCode();
 
@@ -171,14 +188,14 @@ router.post('/', async (req, res) => {
         console.log(`[DEBUG] Speaker created with company: "${doc.company}"`);
 
         const mail = buildSpeakerAckEmail({ name: doc.name });
-        await mailer.sendMail({
+            const mailResult = await mailer.sendMail({
           to: doc.email,
           subject: mail.subject,
           text: mail.text,
           html: mail.html,
           from: mail.from,
         });
-        if (result && result.success) {
+        if (mailResult && mailResult.success) {
           await col.updateOne({ _id: r.insertedId }, {
             $unset: { email_failed: "", email_failed_at: "" },
             $set: { email_sent_at: new Date() }

@@ -50,22 +50,39 @@ function isEmailLike(v) {
   return typeof v === "string" && /\S+@\S+\.\S+/.test(v);
 }
 
-/**
- * GET /api/visitors
- */
 router.get("/", async (req, res) => {
   const db = await obtainDb();
   if (!db) return res.status(500).json({ success: false, error: "DB not ready" });
 
   try {
     const rows = await db.collection("visitors").find({}).sort({ createdAt: -1 }).toArray();
-    return res.json({ success: true, data: rows });
-  } catch (err) {
+    
+    // ✅ Flatten: merge data object fields to root level
+    const flattened = rows.map(r => {
+      const flat = { ...r };
+      if (flat.data && typeof flat.data === 'object') {
+        for (const [key, value] of Object.entries(flat.data)) {
+          if (!(key in flat) || flat[key] === undefined || flat[key] === null) {
+            flat[key] = value;
+          }
+        }
+      }
+      if (flat._id) flat.id = String(flat._id);
+      return flat;
+    });
+    
+    return res.json({ success: true, data: flattened });
+  } catch (err) {                                          // ✅ ADD THIS
     console.error("[visitors] list error:", err && (err.stack || err));
     return res.status(500).json({ success: false, error: "Failed to list visitors" });
   }
 });
 
+/**
+ * GET /api/visitors/:id
+ *
+ * Accept ObjectId or ticket_code
+ */
 /**
  * GET /api/visitors/:id
  *
@@ -87,10 +104,20 @@ router.get("/:id", async (req, res) => {
   if (!doc) {
     doc = await coll.findOne({ ticket_code: id }).catch(() => null);
   }
-
   if (!doc) return res.status(404).json({ success: false, error: "Visitor not found" });
 
-  return res.json(doc);
+  // ✅ Flatten data fields to root
+  const flat = { ...doc };
+  if (flat.data && typeof flat.data === 'object') {
+    for (const [key, value] of Object.entries(flat.data)) {
+      if (!(key in flat) || flat[key] === undefined || flat[key] === null) {
+        flat[key] = value;
+      }
+    }
+  }
+  if (flat._id) flat.id = String(flat._id);
+
+  return res.json(flat);
 });
 
 /**

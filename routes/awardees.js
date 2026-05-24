@@ -188,15 +188,13 @@ router.post('/', express.json(), async (req, res) => {
     }
     // ✅ Extract company
     const companyName = extractCompany(form);
-
-    // Build document with company at root level
     const doc = {
       name: form.name || null,
       email: form.email || null,
       mobile: form.mobile || null,
       designation: form.designation || null,
       organization: form.organization || companyName || null,
-      company: companyName || null,  // ✅ ADD ROOT-LEVEL COMPANY
+      company: companyName || null,
       awardType: form.awardType || null,
       awardOther: form.awardOther || null,
       bio: form.bio || null,
@@ -209,6 +207,21 @@ router.post('/', express.json(), async (req, res) => {
       added_by_admin: addedByAdmin,
     };
 
+    // ✅ ADD ALL DYNAMIC FIELDS from form
+    const skipKeys = new Set([
+      'name', 'fullName', 'email', 'mobile', 'phone', 'designation',
+      'organization', 'company', 'companyName',
+      'awardType', 'awardOther', 'bio',
+      'ticket_code', 'ticket_category', 'category', 'txId',
+      'added_by_admin', 'admin_created_at', 'verificationToken',
+      'termsAccepted', '_rawForm', 'registered_at'
+    ]);
+
+    for (const [key, value] of Object.entries(form)) {
+      if (!skipKeys.has(key) && value !== undefined && value !== null && value !== '') {
+        doc[key] = value;
+      }
+    }
     if (addedByAdmin) {
       doc.admin_created_at = body.admin_created_at ? new Date(body.admin_created_at) : new Date();
     }
@@ -392,8 +405,22 @@ router.get('/', async (req, res) => {
     const limit = Math.min(1000, Math.max(1, parseInt(req.query.limit || '200', 10)));
     const db = await obtainDb();
     if (!db) return res.status(500).json({ error: 'database not available' });
-    const rows = await db.collection('awardees').find({}).sort({ created_at: -1 }).limit(limit).toArray();
-    return res.json(convertBigIntForJson(rows.map(docToOutput)));
+       const rows = await db.collection('awardees').find({}).sort({ created_at: -1 }).limit(limit).toArray();
+    
+    // ✅ Flatten: merge data object fields to root level
+    const flattened = rows.map(r => {
+      const flat = { ...r };
+      if (flat.data && typeof flat.data === 'object') {
+        for (const [key, value] of Object.entries(flat.data)) {
+          if (!(key in flat) || flat[key] === undefined || flat[key] === null) {
+            flat[key] = value;
+          }
+        }
+      }
+      return docToOutput(flat);
+    });
+    
+    return res.json(convertBigIntForJson(flattened));
   } catch (err) {
     console.error('[awardees] GET (mongo) error:', err && (err.stack || err));
     return res.status(500).json({ error: 'Failed to fetch awardees' });
@@ -486,8 +513,7 @@ router.get('/:id', async (req, res) => {
     }
     const db = await obtainDb();
     if (!db) return res.status(500).json({ error: 'database not available' });
-    const doc = await db.collection('awardees').findOne({ _id: oid });
-    return res.json(convertBigIntForJson(docToOutput(doc) || {}));
+      const doc = await db.collection('awardees').findOne({ _id: oid });
   } catch (err) {
     console.error('[awardees] GET/: id (mongo) error:', err && (err.stack || err));
     return res.status(500).json({ error: 'Failed to fetch awardee' });

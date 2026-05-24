@@ -119,7 +119,6 @@ router.post('/', async (req, res) => {
       return undefined;
     };
 
-    const surname = String(pick(['surname']) || '').trim();
     const name = String(pick(['name', 'fullName', 'full_name', 'firstName', 'first_name']) || '').trim();
     const mobile = String(pick(['mobile', 'phone', 'contact', 'whatsapp']) || '').trim();
     const email = String(pick(['email', 'mail', 'emailId', 'email_id', 'contactEmail']) || '').trim();
@@ -140,26 +139,22 @@ router.post('/', async (req, res) => {
     // ✅ Extract company from various fields
     const company = String(pick(['companyName', 'company', 'organization', 'org']) || '').trim();
     const businessType = String(pick(['businessType', 'business_type', 'companyType']) || '').trim();
-    const businessOther = String(pick(['businessOther', 'business_other', 'company_type_other']) || '').trim();
     const partnership = String(pick(['partnership', 'partnershipType', 'partnership_type']) || '').trim();
-    const terms = body.terms ? true : false;
+ 
 
     if (!mobile) {
       return res.status(400).json({ success: false, error: 'mobile is required' });
     }
 
     const doc = {
-      surname: surname || null,
       name: name || null,
       mobile: mobile || null,
       email: email || null,
       designation: designation || null,
       company: company || null,  // ✅ Root level company
       businessType: businessType || null,
-      businessOther: businessOther || null,
       partnership: partnership || null,
-      terms: !!terms,
-      status: 'pending',
+    
       added_by_admin: !!body.added_by_admin,
       created_at: new Date(),
       updated_at: new Date(),
