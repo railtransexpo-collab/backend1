@@ -230,8 +230,14 @@ router.post("/", async (req, res) => {
               : String(value).trim();
         }
       }
-        }
+    }
 
+    doc.added_by_admin = !!body.added_by_admin;
+    if (doc.added_by_admin) {
+      doc.admin_created_at = body.admin_created_at
+        ? new Date(body.admin_created_at)
+        : new Date();
+    }
     doc.createdAt = new Date();
     doc.updatedAt = new Date();
 
@@ -447,14 +453,14 @@ router.get("/", async (req, res) => {
     const db = await obtainDb();
     if (!db) return res.status(500).json({ error: "database not available" });
     const col = db.collection("exhibitors");
-     const rows = await col
+    const rows = await col
       .find({})
       .sort({ createdAt: -1 })
       .limit(2000)
       .toArray();
     const flattened = rows.map((r) => {
       const flat = { ...r };
-      if (flat.data && typeof flat.data === 'object') {
+      if (flat.data && typeof flat.data === "object") {
         for (const [key, value] of Object.entries(flat.data)) {
           if (!(key in flat) || flat[key] === undefined || flat[key] === null) {
             flat[key] = value;
@@ -462,6 +468,18 @@ router.get("/", async (req, res) => {
         }
       }
       if (flat._id) flat.id = String(flat._id);
+      // Format dates
+      ["createdAt", "updatedAt"].forEach((field) => {
+        if (flat[field] instanceof Date) {
+          flat[field] = flat[field].toLocaleString("en-IN", {
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+        }
+      });
       return flat;
     });
     return res.json(flattened);
