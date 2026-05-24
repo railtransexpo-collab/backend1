@@ -202,6 +202,7 @@ router.post('/', express.json(), async (req, res) => {
       ticket_category: form.ticket_category || form.category || 'general',
       txId: form.txId || null,
       data: form,
+      added_by_admin: addedByAdmin,
       createdAt: new Date(),       // ✅
       updatedAt: new Date(),       // ✅
       

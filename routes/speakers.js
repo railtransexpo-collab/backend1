@@ -133,7 +133,7 @@ router.post('/', async (req, res) => {
       slotsValue = Array.isArray(payload.slot_duration) ? payload.slot_duration : [payload.slot_duration];
     }
 
-    const doc = {
+      const doc = {
       name: payload.name || payload.fullName || '',
       email: email,
       mobile: payload.mobile || payload.phone || '',
@@ -141,13 +141,11 @@ router.post('/', async (req, res) => {
       company: company || '',
       ticket_category: 'speaker',
       slots: slotsValue,
-   
-   
       other_details: payload.other_details || payload.otherDetails || '',
-      createdAt: new Date(),                     // ✅ camelCase
-      updatedAt: new Date(),                     // ✅ ADD THIS
+      added_by_admin: !!payload.added_by_admin,       // ✅ ADD THIS
+      createdAt: new Date(),
+      updatedAt: new Date(),
       registered_at: payload.registered_at ? new Date(payload.registered_at) : new Date(),
-     
       admin_created_at: payload.added_by_admin ? new Date(payload.admin_created_at || Date.now()) : undefined,
     };
     const skipKeys = new Set([
@@ -334,7 +332,19 @@ router.get('/', async (req, res) => {
     const col = db.collection('speakers');
        const cursor = col.find({}).sort({ createdAt: -1 }).limit(1000);
     const rows = await cursor.toArray();
-    return res.json(rows.map(docToOutput));
+    const flattened = rows.map(r => {
+      const output = docToOutput(r);
+      ['createdAt', 'updatedAt'].forEach(field => {
+        if (output[field] instanceof Date) {
+          output[field] = output[field].toLocaleString('en-IN', { 
+            day: '2-digit', month: 'short', year: 'numeric', 
+            hour: '2-digit', minute: '2-digit' 
+          });
+        }
+      });
+      return output;
+    });
+    return res.json(flattened);
   } catch (err) {
     console.error('GET /api/speakers (mongo) error:', err && (err.stack || err));
     return res.status(500).json({ error: 'Failed to fetch speakers' });
