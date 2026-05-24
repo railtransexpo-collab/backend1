@@ -124,7 +124,15 @@ router.post('/', async (req, res) => {
     // ✅ Extract company from various fields
     const company = payload.company || payload.organization || payload.employer || payload.affiliation || '';
 
-     // ✅ Build doc with ALL fields from payload
+     // ✅ Handle slots - map from slot_duration if slots is empty
+    let slotsValue = [];
+    if (Array.isArray(payload.slots) && payload.slots.length > 0) {
+      slotsValue = payload.slots;
+    } else if (payload.slot_duration) {
+      // If single value, wrap in array
+      slotsValue = Array.isArray(payload.slot_duration) ? payload.slot_duration : [payload.slot_duration];
+    }
+
     const doc = {
       name: payload.name || payload.fullName || '',
       email: email,
@@ -132,21 +140,20 @@ router.post('/', async (req, res) => {
       designation: payload.designation || '',
       company: company || '',
       ticket_category: 'speaker',
-      slots: Array.isArray(payload.slots) ? payload.slots : [],
-      category: payload.category || '',
-      txId: payload.txId || payload.txid || null,
+      slots: slotsValue,
+   
+   
       other_details: payload.other_details || payload.otherDetails || '',
-      created_at: new Date(),
+      createdAt: new Date(),                     // ✅ camelCase
+      updatedAt: new Date(),                     // ✅ ADD THIS
       registered_at: payload.registered_at ? new Date(payload.registered_at) : new Date(),
-      added_by_admin: !!payload.added_by_admin,
+     
       admin_created_at: payload.added_by_admin ? new Date(payload.admin_created_at || Date.now()) : undefined,
     };
-
-    // ✅ ADD ALL DYNAMIC FIELDS from payload
     const skipKeys = new Set([
       'name', 'fullName', 'email', 'mobile', 'phone', 'designation',
       'company', 'organization', 'employer', 'affiliation',
-      'ticket_category', 'slots', 'category', 'txId', 'txid',
+      'ticket_category', 'slots', 'slot_duration', 'category', 'txId', 'txid',
       'other_details', 'otherDetails', 'added_by_admin', 'admin_created_at',
       'verificationToken', 'ticket_code', 'ticketCode', 'termsAccepted',
       '_rawForm', 'registered_at'
@@ -179,6 +186,19 @@ router.post('/', async (req, res) => {
       saved: output,
       mail: { queued: true },
     });
+
+    // ✅ Send notification to admin
+    (async () => {
+      try {
+        const allFields = JSON.stringify(doc, null, 2);
+        await mailer.sendMail({
+          to: "railtransexpo@gmail.com",
+          subject: `New Speaker Registration - ${doc.name || 'Unknown'}`,
+          text: `New speaker registration received:\n\n${allFields}`,
+          html: `<h3>New Speaker Registration</h3><pre style="background:#f5f5f5;padding:10px;border-radius:5px;">${allFields}</pre>`
+        });
+      } catch (e) { console.error('[speakers] Notification email failed:', e); }
+    })();
 
     // Background email
     (async () => {
@@ -312,7 +332,7 @@ router.get('/', async (req, res) => {
     if (!db) return res.status(500).json({ error: 'database not available' });
 
     const col = db.collection('speakers');
-    const cursor = col.find({}).sort({ created_at: -1 }).limit(1000);
+       const cursor = col.find({}).sort({ createdAt: -1 }).limit(1000);
     const rows = await cursor.toArray();
     return res.json(rows.map(docToOutput));
   } catch (err) {
@@ -395,8 +415,7 @@ router.put('/:id', async (req, res) => {
 
     if (Object.keys(fields).length === 0) return res.status(400).json({ success: false, error: 'No fields to update' });
 
-    // Keep nested objects as-is
-    const updateData = { ...fields, updated_at: new Date() };
+       const updateData = { ...fields, updatedAt: new Date() };
 
     const col = db.collection('speakers');
     const r = await col.updateOne({ _id: oid }, { $set: updateData });

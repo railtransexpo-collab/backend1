@@ -202,8 +202,8 @@ router.post('/', express.json(), async (req, res) => {
       ticket_category: form.ticket_category || form.category || 'general',
       txId: form.txId || null,
       data: form,
-      created_at: new Date(),
-      updated_at: new Date(),
+      createdAt: new Date(),       // ✅
+      updatedAt: new Date(),       // ✅
       added_by_admin: addedByAdmin,
     };
 
@@ -235,13 +235,26 @@ router.post('/', express.json(), async (req, res) => {
     // ✅ Debug log
     console.log(`[DEBUG] Awardee created with company: "${companyName}"`);
 
-    res.status(201).json(convertBigIntForJson({
+     res.status(201).json(convertBigIntForJson({
       success: true,
       insertedId,
       ticket_code: doc.ticket_code,
       saved: docToOutput(saved),
       mail: { queued: true }
     }));
+
+    // ✅ Send notification to admin
+    (async () => {
+      try {
+        const allFields = JSON.stringify(doc, null, 2);
+        await mailer.sendMail({
+          to: "railtransexpo@gmail.com",
+          subject: `New Awardee Registration - ${doc.name || 'Unknown'}`,
+          text: `New awardee registration received:\n\n${allFields}`,
+          html: `<h3>New Awardee Registration</h3><pre style="background:#f5f5f5;padding:10px;border-radius:5px;">${allFields}</pre>`
+        });
+      } catch (e) { console.error('[awardees] Notification email failed:', e); }
+    })();
 
     // Background ACK email
     (async () => {
@@ -405,7 +418,7 @@ router.get('/', async (req, res) => {
     const limit = Math.min(1000, Math.max(1, parseInt(req.query.limit || '200', 10)));
     const db = await obtainDb();
     if (!db) return res.status(500).json({ error: 'database not available' });
-       const rows = await db.collection('awardees').find({}).sort({ created_at: -1 }).limit(limit).toArray();
+           const rows = await db.collection('awardees').find({}).sort({ createdAt: -1 }).limit(limit).toArray();
     
     // ✅ Flatten: merge data object fields to root level
     const flattened = rows.map(r => {
@@ -589,7 +602,7 @@ router.post('/:id/confirm', express.json(), async (req, res) => {
       return res.json({ success: true, updated: docToOutput(existing), note: 'No changes applied (ticket_code protected)' });
     }
 
-    updateData.updated_at = new Date();
+      updateData.updatedAt = new Date();
     await db.collection('awardees').updateOne({ _id: oid }, { $set: updateData });
     const after = await db.collection('awardees').findOne({ _id: oid });
     return res.json({ success: true, updated: docToOutput(after) });
@@ -667,8 +680,7 @@ router.put('/:id', express.json(), async (req, res) => {
     }
 
     if (Object.keys(updateData).length === 0) return res.status(400).json({ success: false, error: 'No valid fields to update.' });
-
-    updateData.updated_at = new Date();
+    updateData.updatedAt = new Date();
     const r = await db.collection('awardees').updateOne({ _id: oid }, { $set: updateData });
     if (!r.matchedCount) return res.status(404).json({ success: false, error: 'Awardee not found' });
 
@@ -698,7 +710,7 @@ router.post('/:id/upload-proof', upload.single('proof'), async (req, res) => {
     if (!req.file) return res.status(400).json({ success: false, error: 'No file uploaded' });
 
     const proofPath = path.relative(process.cwd(), req.file.path);
-    await db.collection('awardees').updateOne({ _id: oid }, { $set: { proof_path: proofPath, updated_at: new Date() } });
+    await db.collection('awardees').updateOne({ _id: oid }, { $set: { proof_path: proofPath, updatedAt: new Date() } });
 
     return res.json({ success: true, file: { filename: req.file.filename, path: proofPath, size: req.file.size } });
   } catch (err) {

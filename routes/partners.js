@@ -154,10 +154,8 @@ router.post('/', async (req, res) => {
       company: company || null,  // ✅ Root level company
       businessType: businessType || null,
       partnership: partnership || null,
-    
-      added_by_admin: !!body.added_by_admin,
-      created_at: new Date(),
-      updated_at: new Date(),
+    createdAt: new Date(),       // ✅
+      updatedAt: new Date(),       // ✅
     };
 
     if (doc.added_by_admin) {
@@ -183,6 +181,19 @@ router.post('/', async (req, res) => {
       id: insertedId,
       mail: { queued: true }
     });
+
+  // ✅ Send notification to admin
+  (async () => {
+    try {
+      const allFields = JSON.stringify(doc, null, 2);
+      await mailer.sendMail({
+        to: "railtransexpo@gmail.com",
+        subject: `New Partner Registration - ${doc.name || doc.company || 'Unknown'}`,
+        text: `New partner registration received:\n\n${allFields}`,
+        html: `<h3>New Partner Registration</h3><pre style="background:#f5f5f5;padding:10px;border-radius:5px;">${allFields}</pre>`
+      });
+    } catch (e) { console.error('[partners] Notification email failed:', e); }
+  })();
 
   // Background email
 (async () => {
@@ -237,7 +248,7 @@ router.get('/', async (req, res) => {
     const db = await obtainDb();
     if (!db) return res.status(500).json({ error: 'database not available' });
 
-    const rows = await db.collection('partners').find({}).sort({ created_at: -1 }).limit(1000).toArray();
+    const rows = await db.collection('partners').find({}).sort({ createdAt: -1 }).limit(1000).toArray();
     return res.json(convertBigIntForJson(rows.map(docToOutput)));
   } catch (err) {
     console.error('[partners] fetch error:', err && (err.stack || err));
@@ -280,7 +291,7 @@ router.put('/:id', async (req, res) => {
 
     if (Object.keys(fields).length === 0) return res.status(400).json({ success: false, error: 'No fields to update' });
 
-    const updateData = { ...fields, updated_at: new Date() };
+    const updateData = { ...fields, updatedAt: new Date() };
 
     const r = await db.collection('partners').updateOne({ _id: oid }, { $set: updateData });
     if (!r.matchedCount) return res.status(404).json({ success: false, error: 'Partner not found' });

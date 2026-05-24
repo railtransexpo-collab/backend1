@@ -230,44 +230,10 @@ router.post("/", async (req, res) => {
               : String(value).trim();
         }
       }
-    }
+        }
 
-    doc.added_by_admin = !!body.added_by_admin;
-    if (doc.added_by_admin) {
-      doc.admin_created_at = body.admin_created_at
-        ? new Date(body.admin_created_at)
-        : new Date();
-    }
-
-    doc.created_at = new Date();
-    doc.updated_at = new Date();
-    for (const [inputKey, docKey] of Object.entries(FIELD_MAP)) {
-      const val =
-        body[inputKey] !== undefined
-          ? body[inputKey]
-          : body[inputKey.toLowerCase()] !== undefined
-            ? body[inputKey.toLowerCase()]
-            : undefined;
-      if (val !== undefined && val !== null && String(val).trim() !== "") {
-        doc[docKey] =
-          typeof val === "object" ? JSON.stringify(val) : String(val).trim();
-      }
-    }
-
-    // ✅ Store company at root level
-    doc.company = companyVal || "";
-    if (otherVal) doc.other = otherVal;
-
-    doc.added_by_admin = !!body.added_by_admin;
-    if (doc.added_by_admin) {
-      doc.admin_created_at = body.admin_created_at
-        ? new Date(body.admin_created_at)
-        : new Date();
-    }
-
-    doc.status = "pending";
-    doc.created_at = new Date();
-    doc.updated_at = new Date();
+    doc.createdAt = new Date();
+    doc.updatedAt = new Date();
 
     let ticket_code = body.ticket_code;
     if (!ticket_code) {
@@ -277,7 +243,7 @@ router.post("/", async (req, res) => {
     }
     doc.ticket_code = ticket_code;
 
-       const insertRes = await col.insertOne(doc);
+    const insertRes = await col.insertOne(doc);
     const insertedId =
       insertRes && insertRes.insertedId ? String(insertRes.insertedId) : null;
 
@@ -294,13 +260,15 @@ router.post("/", async (req, res) => {
         const allFields = JSON.stringify(doc, null, 2);
         await mailer.sendMail({
           to: "railtransexpo@gmail.com",
-          subject: `New Exhibitor Registration - ${doc.name || doc.company || 'Unknown'}`,
+          subject: `New Exhibitor Registration - ${doc.name || doc.company || "Unknown"}`,
           text: `New exhibitor registration received:\n\n${allFields}`,
-          html: `<h3>New Exhibitor Registration</h3><pre style="background:#f5f5f5;padding:10px;border-radius:5px;">${allFields}</pre>`
+          html: `<h3>New Exhibitor Registration</h3><pre style="background:#f5f5f5;padding:10px;border-radius:5px;">${allFields}</pre>`,
         });
-        console.log('[exhibitors] Notification sent to railtransexpo@gmail.com');
+        console.log(
+          "[exhibitors] Notification sent to railtransexpo@gmail.com",
+        );
       } catch (e) {
-        console.error('[exhibitors] Notification email failed:', e);
+        console.error("[exhibitors] Notification email failed:", e);
       }
     })();
 
@@ -479,20 +447,24 @@ router.get("/", async (req, res) => {
     const db = await obtainDb();
     if (!db) return res.status(500).json({ error: "database not available" });
     const col = db.collection("exhibitors");
-    const rows = await col
+     const rows = await col
       .find({})
-      .sort({ created_at: -1 })
+      .sort({ createdAt: -1 })
       .limit(2000)
       .toArray();
-    return res.json(
-      rows.map((r) => {
-        const copy = { ...r };
-        if (copy._id) {
-          copy.id = String(copy._id);
+    const flattened = rows.map((r) => {
+      const flat = { ...r };
+      if (flat.data && typeof flat.data === 'object') {
+        for (const [key, value] of Object.entries(flat.data)) {
+          if (!(key in flat) || flat[key] === undefined || flat[key] === null) {
+            flat[key] = value;
+          }
         }
-        return copy;
-      }),
-    );
+      }
+      if (flat._id) flat.id = String(flat._id);
+      return flat;
+    });
+    return res.json(flattened);
   } catch (err) {
     console.error("Fetch exhibitors (mongo) error:", err && (err.stack || err));
     return res.status(500).json({ error: "Failed to fetch exhibitors" });
@@ -545,7 +517,7 @@ router.put("/:id", async (req, res) => {
         .status(400)
         .json({ success: false, error: "No fields to update" });
 
-    const update = { ...fields, updated_at: new Date() };
+    const update = { ...fields, updatedAt: new Date() };
 
     const col = db.collection("exhibitors");
     const r = await col.updateOne({ _id: oid }, { $set: update });
