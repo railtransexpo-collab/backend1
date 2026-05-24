@@ -180,16 +180,37 @@ router.post("/", async (req, res) => {
       spaceType: "space_type",
       space_size: "space_size",
       stall_size: "stall_size",
-      stall_type: "stall_type", 
-      type_of_space: "type_of_space", 
+      stall_type: "stall_type",
+      type_of_space: "type_of_space",
       boothType: "boothType",
       productDetails: "productDetails",
-      product_category: "product_category", 
-      product_details: "product_details", 
+      product_category: "product_category",
+      product_details: "product_details",
       notes: "notes",
       address: "address",
     };
-
+    // After the FIELD_MAP loop, add any remaining fields dynamically
+    for (const [key, value] of Object.entries(body)) {
+      if (
+        value !== undefined &&
+        value !== null &&
+        String(value).trim() !== ""
+      ) {
+        // Skip already mapped fields
+        const alreadyMapped =
+          Object.values(FIELD_MAP).includes(key) ||
+          key === "company" ||
+          key === "other" ||
+          key === "added_by_admin" ||
+          key === "verificationToken";
+        if (!alreadyMapped && !(key in doc)) {
+          doc[key] =
+            typeof value === "object"
+              ? JSON.stringify(value)
+              : String(value).trim();
+        }
+      }
+    }
     const doc = {};
     for (const [inputKey, docKey] of Object.entries(FIELD_MAP)) {
       const val =
@@ -363,16 +384,13 @@ router.post("/:id/resend-email", async (req, res) => {
             },
           },
         );
-        return res
-          .status(500)
-          .json({
-            success: false,
-            mail: {
-              ok: false,
-              error:
-                result && result.error ? result.error : "ticket_send_failed",
-            },
-          });
+        return res.status(500).json({
+          success: false,
+          mail: {
+            ok: false,
+            error: result && result.error ? result.error : "ticket_send_failed",
+          },
+        });
       }
     } catch (e) {
       console.error(
@@ -390,12 +408,10 @@ router.post("/:id/resend-email", async (req, res) => {
           },
         );
       } catch {}
-      return res
-        .status(500)
-        .json({
-          success: false,
-          mail: { ok: false, error: "Failed to send ticket email" },
-        });
+      return res.status(500).json({
+        success: false,
+        mail: { ok: false, error: "Failed to send ticket email" },
+      });
     }
   } catch (err) {
     console.error(
@@ -646,13 +662,11 @@ support@railtransexpo.com`,
       "Approve exhibitor (mongo) error:",
       err && (err.stack || err),
     );
-    return res
-      .status(500)
-      .json({
-        success: false,
-        error:
-          err && err.message ? err.message : "Server error approving exhibitor",
-      });
+    return res.status(500).json({
+      success: false,
+      error:
+        err && err.message ? err.message : "Server error approving exhibitor",
+    });
   }
 });
 
@@ -764,15 +778,11 @@ RailTrans Expo Team`,
     return;
   } catch (err) {
     console.error("Cancel exhibitor (mongo) error:", err && (err.stack || err));
-    return res
-      .status(500)
-      .json({
-        success: false,
-        error:
-          err && err.message
-            ? err.message
-            : "Server error cancelling exhibitor",
-      });
+    return res.status(500).json({
+      success: false,
+      error:
+        err && err.message ? err.message : "Server error cancelling exhibitor",
+    });
   }
 });
 
