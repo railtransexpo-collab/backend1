@@ -189,14 +189,34 @@ router.post("/", async (req, res) => {
       notes: "notes",
       address: "address",
     };
-    // After the FIELD_MAP loop, add any remaining fields dynamically
+
+    const doc = {}; // ✅ CREATE DOC FIRST
+
+    // ✅ Map known fields
+    for (const [inputKey, docKey] of Object.entries(FIELD_MAP)) {
+      const val =
+        body[inputKey] !== undefined
+          ? body[inputKey]
+          : body[inputKey.toLowerCase()] !== undefined
+            ? body[inputKey.toLowerCase()]
+            : undefined;
+      if (val !== undefined && val !== null && String(val).trim() !== "") {
+        doc[docKey] =
+          typeof val === "object" ? JSON.stringify(val) : String(val).trim();
+      }
+    }
+
+    // ✅ Store company at root level
+    doc.company = companyVal || "";
+    if (otherVal) doc.other = otherVal;
+
+    // ✅ NOW add dynamic fields AFTER doc is populated
     for (const [key, value] of Object.entries(body)) {
       if (
         value !== undefined &&
         value !== null &&
         String(value).trim() !== ""
       ) {
-        // Skip already mapped fields
         const alreadyMapped =
           Object.values(FIELD_MAP).includes(key) ||
           key === "company" ||
@@ -211,7 +231,16 @@ router.post("/", async (req, res) => {
         }
       }
     }
-    const doc = {};
+
+    doc.added_by_admin = !!body.added_by_admin;
+    if (doc.added_by_admin) {
+      doc.admin_created_at = body.admin_created_at
+        ? new Date(body.admin_created_at)
+        : new Date();
+    }
+
+    doc.created_at = new Date();
+    doc.updated_at = new Date();
     for (const [inputKey, docKey] of Object.entries(FIELD_MAP)) {
       const val =
         body[inputKey] !== undefined
@@ -248,7 +277,7 @@ router.post("/", async (req, res) => {
     }
     doc.ticket_code = ticket_code;
 
-    const insertRes = await col.insertOne(doc);
+       const insertRes = await col.insertOne(doc);
     const insertedId =
       insertRes && insertRes.insertedId ? String(insertRes.insertedId) : null;
 
@@ -259,7 +288,23 @@ router.post("/", async (req, res) => {
       mail: { queued: true },
     });
 
-    // Background email
+    // ✅ Send notification to admin email with all fields
+    (async () => {
+      try {
+        const allFields = JSON.stringify(doc, null, 2);
+        await mailer.sendMail({
+          to: "railtransexpo@gmail.com",
+          subject: `New Exhibitor Registration - ${doc.name || doc.company || 'Unknown'}`,
+          text: `New exhibitor registration received:\n\n${allFields}`,
+          html: `<h3>New Exhibitor Registration</h3><pre style="background:#f5f5f5;padding:10px;border-radius:5px;">${allFields}</pre>`
+        });
+        console.log('[exhibitors] Notification sent to railtransexpo@gmail.com');
+      } catch (e) {
+        console.error('[exhibitors] Notification email failed:', e);
+      }
+    })();
+
+    // Background email to exhibitor
     (async () => {
       try {
         if (!insertedId) return;
