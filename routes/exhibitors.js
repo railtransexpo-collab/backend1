@@ -45,33 +45,53 @@ function isEmailLike(v) {
  * This is the DEFAULT ACK EMAIL (no ticket, no badge).
  */
 function buildExhibitorAckEmail({ name = "" } = {}) {
-  const subject = "Exhibitor request received — RailTrans Expo";
-  const text = `Hello ${name},
+  const subject = "Thank You for Your Interest in 6th RailTrans Expo 2026";
 
-Thank you for showing your interest and choosing to be a part of RailTrans Expo. We truly appreciate your decision to connect with us and explore exhibiting opportunities at our platform.
+  const text = `Dear ${name || "Sir/Ma'am"},
 
-We are pleased to confirm that your exhibitor request has been received.  Our team is currently reviewing the details shared by you and will get back to you shortly with the next steps.
+Thank you for submitting your application form to participate as an exhibitor at the 6th RailTrans Expo 2026.
 
-Regards,
-RailTrans Expo Team
-support@railtransexpo. com
-`;
+We are delighted to receive your interest in being a part of this prestigious industry platform.
 
-  const html = `<p>Hello ${name},</p>
-<p>Thank you for showing your interest and choosing to be a part of <strong>RailTrans Expo</strong>. <br> We truly appreciate your decision to connect with us and explore exhibiting opportunities at our platform.</p>
+Your application is currently under the review process, and our team is carefully evaluating the details submitted by your organization.
 
-<p>We are pleased to confirm that your exhibitor request has been <strong>successfully received</strong>. <br>Our team is currently reviewing the details shared by you and will get back to you shortly with the next steps.</p>
+Venue: Bharat Mandapam
+Event Dates: 3rd & 4th July 2026
 
-<p>Regards,<br/>
-<strong>RailTrans Expo Team</strong><br/>
-<a href="mailto:support@railtransexpo.com">support@railtransexpo.com</a>
-</p>`;
+Our team will get in touch with you shortly regarding the next steps and further coordination.
+
+Thank you once again for your interest and support. We look forward to the opportunity of welcoming you to the event.
+
+Warm regards,
+Team RailTrans Expo
+support@railtransexpo.com
++91 9211675505, +91 8527599895
+www.railtransexpo.com`;
+
+  const html = `<p>Dear ${name || "Sir/Ma'am"},</p>
+<p>Thank you for submitting your application form to participate as an <strong>exhibitor</strong> at the <strong>6th RailTrans Expo 2026</strong>.</p>
+
+<p>We are delighted to receive your interest in being a part of this prestigious industry platform.</p>
+
+<p>Your application is currently under the review process, and our team is carefully evaluating the details submitted by your organization.</p>
+
+<p><strong>Venue:</strong> Bharat Mandapam<br/>
+<strong>Event Dates:</strong> 3rd & 4th July 2026</p>
+
+<p>Our team will get in touch with you shortly regarding the next steps and further coordination.</p>
+
+<p>Thank you once again for your interest and support. We look forward to the opportunity of welcoming you to the event.</p>
+
+<p>Warm regards,<br/>
+<strong>Team RailTrans Expo</strong><br/>
+<a href="mailto:support@railtransexpo.com">support@railtransexpo.com</a><br/>
++91 9211675505, +91 8527599895<br/>
+<a href="https://www.railtransexpo.com">www.railtransexpo.com</a></p>`;
 
   const from =
     process.env.MAIL_FROM || `RailTrans Expo <support@railtransexpo.com>`;
   return { subject, text, html, from };
 }
-
 /**
  * POST /api/exhibitors/step
  */

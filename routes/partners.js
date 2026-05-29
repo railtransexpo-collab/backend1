@@ -13,28 +13,49 @@ function generateTicketCode() {
 }
 
 function buildPartnerAckEmail({ name = "", company = "" } = {}) {
-  const subject = "RailTrans Expo — Partner Request Received";
+  const subject = "Thank You for Your Interest in 6th RailTrans Expo 2026";
+  const displayName = name || company || "Sir/Ma'am";
 
-  const text = `Hello ${name || company || "Partner"},
+  const text = `Dear ${displayName},
 
-Thank you for your interest in partnering with RailTrans Expo. 
+Thank you for submitting your application form to participate as a partner at the 6th RailTrans Expo 2026.
 
-We have received your details and our team will review your request. 
-You will hear from us shortly.
+We are delighted to receive your interest in being a part of this prestigious industry platform.
 
-Regards,
-RailTrans Expo Team
+Your application is currently under the review process, and our team is carefully evaluating the details submitted by your organization.
+
+Venue: Bharat Mandapam
+Event Dates: 3rd & 4th July 2026
+
+Our team will get in touch with you shortly regarding the next steps and further coordination.
+
+Thank you once again for your interest and support. We look forward to the opportunity of welcoming you to the event.
+
+Warm regards,
+Team RailTrans Expo
 support@railtransexpo.com
-`;
++91 9211675505, +91 8527599895
+www.railtransexpo.com`;
 
-  const html = `
-<p>Hello ${name || company || "Partner"},</p>
-<p>Thank you for your interest in partnering with <strong>RailTrans Expo</strong>.</p>
-<p>We have received your details and our team will review your request.  You will hear from us shortly.</p>
-<p>Regards,<br/>
-<strong>RailTrans Expo Team</strong><br/>
-<a href="mailto:support@railtransexpo.com">support@railtransexpo.com</a>
-</p>`;
+  const html = `<p>Dear ${displayName},</p>
+<p>Thank you for submitting your application form to participate as a <strong>partner</strong> at the <strong>6th RailTrans Expo 2026</strong>.</p>
+
+<p>We are delighted to receive your interest in being a part of this prestigious industry platform.</p>
+
+<p>Your application is currently under the review process, and our team is carefully evaluating the details submitted by your organization.</p>
+
+<p><strong>Venue:</strong> Bharat Mandapam<br/>
+<strong>Event Dates:</strong> 3rd & 4th July 2026</p>
+
+<p>Our team will get in touch with you shortly regarding the next steps and further coordination.</p>
+
+<p>Thank you once again for your interest and support. We look forward to the opportunity of welcoming you to the event.</p>
+
+<p>Warm regards,<br/>
+<strong>Team RailTrans Expo</strong><br/>
+<a href="mailto:support@railtransexpo.com">support@railtransexpo.com</a><br/>
++91 9211675505, +91 8527599895<br/>
+<a href="https://www.railtransexpo.com">www.railtransexpo.com</a></p>`;
 
   return {
     subject,
@@ -283,12 +304,10 @@ router.post("/", async (req, res) => {
     return;
   } catch (err) {
     console.error("[partners] register error:", err);
-    return res
-      .status(500)
-      .json({
-        success: false,
-        error: err && err.message ? err.message : String(err),
-      });
+    return res.status(500).json({
+      success: false,
+      error: err && err.message ? err.message : String(err),
+    });
   }
 });
 /* ---------- Read / Update / Delete endpoints ---------- */
@@ -636,15 +655,13 @@ router.post("/:id/resend-email", async (req, res) => {
             },
           },
         );
-        return res
-          .status(500)
-          .json({
-            success: false,
-            error:
-              result && result.error
-                ? result.error
-                : "Failed to send ticket email",
-          });
+        return res.status(500).json({
+          success: false,
+          error:
+            result && result.error
+              ? result.error
+              : "Failed to send ticket email",
+        });
       }
     } catch (e) {
       console.error("[partners] resend ticket failed:", e && (e.stack || e));
