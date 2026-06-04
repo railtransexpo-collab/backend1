@@ -605,7 +605,6 @@ const PORT = process.env.PORT || 3000;
 
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`Server running at port ${PORT}`);
-      // ✅ Daily reminder checker - sends ticket emails with badges
       setInterval(
         async () => {
           try {
@@ -615,31 +614,34 @@ const PORT = process.env.PORT || 3000;
               return;
             }
 
-            const {
-              calculateReminderDays,
-              getEventDate,
-            } = require("./utils/dynamicReminder");
-            const sendTicketEmail = require("./utils/sendTicketEmail");
+            // ✅ FIXED REMINDER DATES
+            const today = new Date();
+            const todayStr = today.toISOString().split("T")[0];
+            const reminderDates = ["2026-06-27", "2026-06-29"];
 
-            const eventDate = await getEventDate(db);
-            const todayDays = calculateReminderDays(eventDate);
-            const todayReminderDay = todayDays[0]; // First day in the array is today's reminder
+            if (!reminderDates.includes(todayStr)) {
+              console.log(
+                `[reminder-sender] ${todayStr} - Not a reminder date. Skipping.`,
+              );
+              return;
+            }
 
             console.log(
-              `[reminder-sender] Event: ${eventDate}, Today's reminder day: ${todayReminderDay}`,
+              `[reminder-sender] ${todayStr} - REMINDER DATE! Sending tickets...`,
             );
 
-            // Find all pending reminders for today
+            const sendTicketEmail = require("./utils/sendTicketEmail");
+
+            // Find all pending reminders
             const reminders = await db
               .collection("scheduled_reminders")
               .find({
                 status: "pending",
-                scheduleDays: todayReminderDay,
               })
               .toArray();
 
             console.log(
-              `[reminder-sender] Found ${reminders.length} reminders for day ${todayReminderDay}`,
+              `[reminder-sender] Found ${reminders.length} pending reminders`,
             );
 
             let sent = 0;
@@ -650,7 +652,6 @@ const PORT = process.env.PORT || 3000;
                 const { ObjectId } = require("mongodb");
                 let record = null;
 
-                // Find the entity record
                 try {
                   record = await db.collection(reminder.entity).findOne({
                     _id: new ObjectId(reminder.entityId),
@@ -663,7 +664,7 @@ const PORT = process.env.PORT || 3000;
 
                 if (!record || !record.email) {
                   console.log(
-                    `[reminder-sender] No record found for ${reminder.entity}/${reminder.entityId}`,
+                    `[reminder-sender] No record for ${reminder.entity}/${reminder.entityId}`,
                   );
                   await db
                     .collection("scheduled_reminders")
@@ -674,7 +675,6 @@ const PORT = process.env.PORT || 3000;
                   continue;
                 }
 
-                // ✅ Send ticket email with badge (same as payment webhook)
                 console.log(
                   `[reminder-sender] Sending ticket to ${record.email} (${reminder.entity})`,
                 );
@@ -685,27 +685,28 @@ const PORT = process.env.PORT || 3000;
                   options: { forceSend: true, includeBadge: true },
                 });
 
-                if (result && result.success) {
-                  await db.collection("scheduled_reminders").updateOne(
-                    { _id: reminder._id },
-                    {
-                      $set: {
-                        status: "sent",
-                        sentAt: new Date(),
-                        updatedAt: new Date(),
+                if (result?.success) {
+                  await db
+                    .collection("scheduled_reminders")
+                    .updateOne(
+                      { _id: reminder._id },
+                      {
+                        $set: {
+                          status: "sent",
+                          sentAt: new Date(),
+                          updatedAt: new Date(),
+                        },
                       },
-                    },
-                  );
-
-                  // Update entity record
-                  await db.collection(reminder.entity).updateOne(
-                    { _id: record._id },
-                    {
-                      $set: { ticket_email_sent_at: new Date() },
-                      $unset: { ticket_email_failed: "" },
-                    },
-                  );
-
+                    );
+                  await db
+                    .collection(reminder.entity)
+                    .updateOne(
+                      { _id: record._id },
+                      {
+                        $set: { ticket_email_sent_at: new Date() },
+                        $unset: { ticket_email_failed: "" },
+                      },
+                    );
                   sent++;
                   console.log(
                     `[reminder-sender] ✅ Ticket sent to ${record.email}`,
@@ -720,7 +721,7 @@ const PORT = process.env.PORT || 3000;
               } catch (e) {
                 failed++;
                 console.error(
-                  `[reminder-sender] Error for ${reminder.entity}/${reminder.entityId}:`,
+                  `[reminder-sender] Error: ${reminder.entity}/${reminder.entityId}:`,
                   e.message,
                 );
               }
@@ -733,8 +734,8 @@ const PORT = process.env.PORT || 3000;
             console.error("[reminder-sender] Error:", e.message);
           }
         },
-        24 * 60 * 60 * 1000,
-      ); // Every 24 hours
+        60 * 60 * 1000,
+      ); // Check every 1 hour (so it catches the reminder dates)
 
       console.log(
         "[reminder-sender] Started (runs every 24h, sends ticket emails with badges)",
