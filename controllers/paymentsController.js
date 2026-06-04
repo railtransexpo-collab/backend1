@@ -9,20 +9,16 @@ const razorpay = new Razorpay({
 
 async function obtainDb() {
   const mongo = require("../utils/mongoClient");
-
   if (!mongo) return null;
-
   if (typeof mongo.getDb === "function") {
     return await mongo.getDb();
   }
-
   return mongo.db || null;
 }
 
 /* =========================================================
    CREATE ORDER
 ========================================================= */
-
 exports.createOrder = async (req, res) => {
   try {
     const {
@@ -41,7 +37,6 @@ exports.createOrder = async (req, res) => {
     }
 
     const amountNum = Number(amount || 0);
-
     if (amountNum <= 0) {
       return res.status(400).json({
         success: false,
@@ -57,11 +52,9 @@ exports.createOrder = async (req, res) => {
       notes: metadata || {},
     });
 
-    /* Save payment row */
-
+    // Save payment row
     try {
       const db = await obtainDb();
-
       if (db) {
         await db.collection("payments").insertOne({
           visitor_id,
@@ -89,7 +82,6 @@ exports.createOrder = async (req, res) => {
     });
   } catch (err) {
     console.error("createOrder error:", err);
-
     return res.status(500).json({
       success: false,
       error: "Order creation failed",
@@ -100,11 +92,9 @@ exports.createOrder = async (req, res) => {
 /* =========================================================
    PAYMENT STATUS
 ========================================================= */
-
 exports.status = async (req, res) => {
   try {
     const { reference_id } = req.query;
-
     if (!reference_id) {
       return res.status(400).json({
         success: false,
@@ -113,7 +103,6 @@ exports.status = async (req, res) => {
     }
 
     const db = await obtainDb();
-
     if (!db) {
       return res.json({
         success: true,
@@ -132,7 +121,6 @@ exports.status = async (req, res) => {
     });
   } catch (err) {
     console.error("status error:", err);
-
     return res.status(500).json({
       success: false,
       error: "Status fetch failed",
@@ -141,20 +129,15 @@ exports.status = async (req, res) => {
 };
 
 /* =========================================================
-   WEBHOOK
+   WEBHOOK - WITH AUTO TICKET EMAIL
 ========================================================= */
-
 exports.webhookHandler = async (req, res) => {
   try {
     const body = req.body.toString();
-
     const signature = req.headers["x-razorpay-signature"];
 
     const expectedSignature = crypto
-      .createHmac(
-        "sha256",
-        process.env.RAZORPAY_WEBHOOK_SECRET
-      )
+      .createHmac("sha256", process.env.RAZORPAY_WEBHOOK_SECRET)
       .update(body)
       .digest("hex");
 
@@ -168,73 +151,179 @@ exports.webhookHandler = async (req, res) => {
     const event = JSON.parse(body);
 
     /* PAYMENT CAPTURED */
-
     if (event.event === "payment.captured") {
       const payment = event.payload.payment.entity;
-
       const orderId = payment.order_id;
       const paymentId = payment.id;
-
       const amount = Number(payment.amount || 0) / 100;
 
       const db = await obtainDb();
+      if (!db) {
+        return res.json({ success: true });
+      }
 
-      if (db) {
-        const paymentsCol = db.collection("payments");
+      const paymentsCol = db.collection("payments");
+      const existing = await paymentsCol.findOne({
+        provider_order_id: orderId,
+      });
 
-        const existing = await paymentsCol.findOne({
-          provider_order_id: orderId,
+      // Update payment record
+      await paymentsCol.updateOne(
+        { provider_order_id: orderId },
+        {
+          $set: {
+            provider_payment_id: paymentId,
+            status: "paid",
+            amount,
+            payment_provider: "razorpay",
+            webhook_payload: event,
+            updated_at: new Date(),
+            paid_at: new Date(),
+          },
+        },
+      );
+
+      // Update visitor and send ticket email
+      let visitorRecord = null;
+      if (existing?.visitor_id) {
+        const visitorsCol = db.collection("visitors");
+
+        const filter = ObjectId.isValid(existing.visitor_id)
+          ? { _id: new ObjectId(existing.visitor_id) }
+          : { ticket_code: String(existing.visitor_id) };
+
+        // Update visitor payment status
+        await visitorsCol.updateOne(filter, {
+          $set: {
+            payment_status: "paid",
+            payment_provider: "razorpay",
+            txId: paymentId,
+            amount_paid: amount,
+            paid_at: new Date(),
+            updated_at: new Date(),
+          },
         });
 
-        await paymentsCol.updateOne(
-          {
-            provider_order_id: orderId,
-          },
-          {
-            $set: {
-              provider_payment_id: paymentId,
-              status: "paid",
-              amount,
-              payment_provider: "razorpay",
-              webhook_payload: event,
-              updated_at: new Date(),
-              paid_at: new Date(),
-            },
-          }
-        );
+        // Fetch updated visitor for email
+        visitorRecord = await visitorsCol.findOne(filter);
+      }
 
-        /* Update visitor */
-
-        if (existing?.visitor_id) {
-          const visitorsCol = db.collection("visitors");
-
-          const filter = ObjectId.isValid(existing.visitor_id)
-            ? { _id: new ObjectId(existing.visitor_id) }
-            : { ticket_code: String(existing.visitor_id) };
-
-          await visitorsCol.updateOne(
-            filter,
-            {
-              $set: {
-                payment_status: "paid",
-                payment_provider: "razorpay",
-                txId: paymentId,
-                amount_paid: amount,
-                paid_at: new Date(),
-                updated_at: new Date(),
-              },
-            }
+      // ✅ SEND TICKET EMAIL WITH BADGE/QR AFTER SUCCESSFUL PAYMENT
+      if (visitorRecord && visitorRecord.email) {
+        try {
+          const sendTicketEmail = require("../utils/sendTicketEmail");
+          console.log(
+            "[webhook] Sending ticket email to:",
+            visitorRecord.email,
           );
+
+          const result = await sendTicketEmail({
+            entity: "visitors",
+            record: visitorRecord,
+            options: { forceSend: true, includeBadge: true },
+          });
+
+          if (result && result.success) {
+            console.log(
+              "[webhook] ✅ Ticket email sent to:",
+              visitorRecord.email,
+            );
+            await db.collection("visitors").updateOne(
+              { _id: visitorRecord._id },
+              {
+                $set: { ticket_email_sent_at: new Date() },
+                $unset: { ticket_email_failed: "" },
+              },
+            );
+          } else {
+            console.error("[webhook] ❌ Ticket email failed:", result?.error);
+            await db.collection("visitors").updateOne(
+              { _id: visitorRecord._id },
+              {
+                $set: {
+                  ticket_email_failed: true,
+                  ticket_email_failed_at: new Date(),
+                },
+              },
+            );
+          }
+        } catch (emailErr) {
+          console.error("[webhook] Email send error:", emailErr);
+          try {
+            await db.collection("visitors").updateOne(
+              { _id: visitorRecord._id },
+              {
+                $set: {
+                  ticket_email_failed: true,
+                  ticket_email_failed_at: new Date(),
+                },
+              },
+            );
+          } catch (updateErr) {
+            console.error(
+              "[webhook] Failed to update email status:",
+              updateErr,
+            );
+          }
+        }
+      } else {
+        console.log(
+          "[webhook] No visitor record or email found, skipping ticket email",
+        );
+      }
+
+      // ✅ CONSUME COUPON IF USED
+      if (existing?.metadata?.couponCode) {
+        try {
+          const couponCode = String(existing.metadata.couponCode)
+            .toUpperCase()
+            .trim();
+          if (couponCode) {
+            await db.collection("coupons").updateOne(
+              { code: couponCode },
+              {
+                $set: {
+                  used: true,
+                  used_at: new Date(),
+                  used_by:
+                    visitorRecord?.email || existing?.visitor_id || "unknown",
+                  payment_id: paymentId,
+                },
+              },
+            );
+            console.log("[webhook] Coupon consumed:", couponCode);
+          }
+        } catch (couponErr) {
+          console.error("[webhook] Coupon consume error:", couponErr);
         }
       }
     }
 
-    return res.json({
-      success: true,
-    });
+    // Handle payment failure
+    if (event.event === "payment.failed") {
+      const payment = event.payload.payment.entity;
+      const orderId = payment.order_id;
+
+      const db = await obtainDb();
+      if (db) {
+        await db.collection("payments").updateOne(
+          { provider_order_id: orderId },
+          {
+            $set: {
+              status: "failed",
+              webhook_payload: event,
+              updated_at: new Date(),
+              failed_at: new Date(),
+            },
+          },
+        );
+        console.log("[webhook] Payment failed for order:", orderId);
+      }
+    }
+
+    return res.json({ success: true });
   } catch (err) {
     console.error("webhook error:", err);
-
     return res.status(500).json({
       success: false,
       error: "Webhook failed",

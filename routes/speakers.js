@@ -6,6 +6,8 @@ const { sendMail } = require("../utils/mailer");
 const mailer = require("../utils/mailer"); // for ACK email
 const sendTicketEmail = require("../utils/sendTicketEmail"); // for ticket email with badge
 const { verifyOtpToken } = require("../utils/otpStore");
+const { scheduleDynamicReminder } = require("../utils/dynamicReminder");
+
 // parse JSON bodies for routes in this router
 router.use(express.json({ limit: "6mb" }));
 // OTP verification helper (shared global store from otp.js)
@@ -266,6 +268,9 @@ router.post("/", async (req, res) => {
       saved: output,
       mail: { queued: true },
     });
+    scheduleDynamicReminder(db, "speakers", insertedId).catch(e =>
+      console.error("[speakers] Reminder schedule failed:", e.message)
+    );
 
     // ✅ Send notification to admin
     (async () => {

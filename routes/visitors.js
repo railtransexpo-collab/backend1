@@ -2,10 +2,10 @@ const express = require("express");
 const router = express.Router();
 const mongo = require("../utils/mongoClient");
 const { ObjectId } = require("mongodb");
-const sendTicketEmail = require("../utils/sendTicketEmail"); // centralized email + badge sender
-const { verifyOtpToken } = require('../utils/otpStore');
-
-
+const mailer = require("../utils/mailer");
+const sendTicketEmail = require("../utils/sendTicketEmail");
+const { verifyOtpToken } = require("../utils/otpStore");
+const { scheduleDynamicReminder } = require("../utils/dynamicReminder"); // ✅ ADD THIS LINE
 router.use(express.json({ limit: "6mb" }));
 // OTP verification helper (shared global store from otp.js)
 function checkOtpToken(role, email, token) {
@@ -49,18 +49,74 @@ function toObjectId(id) {
 function isEmailLike(v) {
   return typeof v === "string" && /\S+@\S+\.\S+/.test(v);
 }
+/**
+ * Build visitor ACK email (no ticket, no badge)
+ */
+function buildVisitorAckEmail({ name = "" } = {}) {
+  const subject = "Thank You for Your Interest in 6th RailTrans Expo 2026";
+
+  const text = `Dear ${name || "Sir/Ma'am"},
+
+Thank you for registering as a delegate/visitor for the 6th RailTrans Expo 2026.
+
+We are delighted to receive your interest in being a part of this prestigious industry platform.
+
+Your registration is currently under the review process, and our team is carefully evaluating the details submitted by you.
+
+Venue: Bharat Mandapam
+Event Dates: 3rd & 4th July 2026
+
+Our team will get in touch with you shortly regarding the next steps and further coordination.
+
+Thank you once again for your interest and support. We look forward to the opportunity of welcoming you to the event.
+
+Warm regards,
+Team RailTrans Expo
+support@railtransexpo.com
++91 9211675505, +91 8527599895
+www.railtransexpo.com`;
+
+  const html = `<p>Dear ${name || "Sir/Ma'am"},</p>
+<p>Thank you for registering as a <strong>delegate/visitor</strong> for the <strong>6th RailTrans Expo 2026</strong>.</p>
+
+<p>We are delighted to receive your interest in being a part of this prestigious industry platform.</p>
+
+<p>Your registration is currently under the review process, and our team is carefully evaluating the details submitted by you.</p>
+
+<p><strong>Venue:</strong> Bharat Mandapam<br/>
+<strong>Event Dates:</strong> 3rd & 4th July 2026</p>
+
+<p>Our team will get in touch with you shortly regarding the next steps and further coordination.</p>
+
+<p>Thank you once again for your interest and support. We look forward to the opportunity of welcoming you to the event.</p>
+
+<p>Warm regards,<br/>
+<strong>Team RailTrans Expo</strong><br/>
+<a href="mailto:support@railtransexpo.com">support@railtransexpo.com</a><br/>
++91 9211675505, +91 8527599895<br/>
+<a href="https://www.railtransexpo.com">www.railtransexpo.com</a></p>`;
+
+  const from =
+    process.env.MAIL_FROM || "RailTrans Expo <support@railtransexpo.com>";
+  return { subject, text, html, from };
+}
 
 router.get("/", async (req, res) => {
   const db = await obtainDb();
-  if (!db) return res.status(500).json({ success: false, error: "DB not ready" });
+  if (!db)
+    return res.status(500).json({ success: false, error: "DB not ready" });
 
   try {
-    const rows = await db.collection("visitors").find({}).sort({ createdAt: -1 }).toArray();
-    
+    const rows = await db
+      .collection("visitors")
+      .find({})
+      .sort({ createdAt: -1 })
+      .toArray();
+
     // ✅ Flatten: merge data object fields to root level
-    const flattened = rows.map(r => {
+    const flattened = rows.map((r) => {
       const flat = { ...r };
-      if (flat.data && typeof flat.data === 'object') {
+      if (flat.data && typeof flat.data === "object") {
         for (const [key, value] of Object.entries(flat.data)) {
           if (!(key in flat) || flat[key] === undefined || flat[key] === null) {
             flat[key] = value;
@@ -70,11 +126,14 @@ router.get("/", async (req, res) => {
       if (flat._id) flat.id = String(flat._id);
       return flat;
     });
-    
+
     return res.json({ success: true, data: flattened });
-  } catch (err) {                                          // ✅ ADD THIS
+  } catch (err) {
+    // ✅ ADD THIS
     console.error("[visitors] list error:", err && (err.stack || err));
-    return res.status(500).json({ success: false, error: "Failed to list visitors" });
+    return res
+      .status(500)
+      .json({ success: false, error: "Failed to list visitors" });
   }
 });
 
@@ -90,7 +149,8 @@ router.get("/", async (req, res) => {
  */
 router.get("/:id", async (req, res) => {
   const db = await obtainDb();
-  if (!db) return res.status(500).json({ success: false, error: "DB not ready" });
+  if (!db)
+    return res.status(500).json({ success: false, error: "DB not ready" });
 
   const id = req.params.id;
   let doc = null;
@@ -104,11 +164,12 @@ router.get("/:id", async (req, res) => {
   if (!doc) {
     doc = await coll.findOne({ ticket_code: id }).catch(() => null);
   }
-  if (!doc) return res.status(404).json({ success: false, error: "Visitor not found" });
+  if (!doc)
+    return res.status(404).json({ success: false, error: "Visitor not found" });
 
   // ✅ Flatten data fields to root
   const flat = { ...doc };
-  if (flat.data && typeof flat.data === 'object') {
+  if (flat.data && typeof flat.data === "object") {
     for (const [key, value] of Object.entries(flat.data)) {
       if (!(key in flat) || flat[key] === undefined || flat[key] === null) {
         flat[key] = value;
@@ -124,13 +185,10 @@ router.get("/:id", async (req, res) => {
  * POST /api/visitors
  * Create visitor and send email in background (unless added_by_admin is true).
  */
-/**
- * POST /api/visitors
- * Create visitor and send email in background (ALWAYS, even if added_by_admin).
- */
 router.post("/", async (req, res) => {
   const db = await obtainDb();
-  if (!db) return res.status(500).json({ success: false, error: "DB not ready" });
+  if (!db)
+    return res.status(500).json({ success: false, error: "DB not ready" });
 
   try {
     const body = req.body || {};
@@ -138,7 +196,9 @@ router.post("/", async (req, res) => {
 
     const email = String(form.email || "").trim();
     if (!isEmailLike(email)) {
-      return res.status(400).json({ success: false, message: "Valid email required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Valid email required" });
     }
 
     // OTP verification (SKIP for admin-created records)
@@ -146,7 +206,12 @@ router.post("/", async (req, res) => {
     const verificationToken = body.verificationToken || form.verificationToken;
 
     if (!isAdminCreate) {
-      const isValid = await verifyOtpToken(db, 'visitor', email, verificationToken);
+      const isValid = await verifyOtpToken(
+        db,
+        "visitor",
+        email,
+        verificationToken,
+      );
       if (!isValid) {
         return res.status(403).json({
           success: false,
@@ -166,42 +231,31 @@ router.post("/", async (req, res) => {
 
     // ✅ Extract company from multiple possible locations
     let company = "";
-    if (form.company) {
-      company = form.company;
-    } else if (form.organization) {
-      company = form.organization;
-    } else if (form.companyName) {
-      company = form.companyName;
-    } else if (form.employer) {
-      company = form.employer;
-    } else if (form.affiliation) {
-      company = form.affiliation;
-    }
-
-    // Also check in data field if present
-    if (!company && form.data && form.data.company) {
-      company = form.data.company;
-    }
+    if (form.company) company = form.company;
+    else if (form.organization) company = form.organization;
+    else if (form.companyName) company = form.companyName;
+    else if (form.employer) company = form.employer;
+    else if (form.affiliation) company = form.affiliation;
+    if (!company && form.data && form.data.company) company = form.data.company;
 
     const doc = {
       role: "visitor",
       name: form.name || null,
       email,
       mobile: form.mobile || null,
-      company: company || null,  // ✅ Root level company
+      company: company || null,
       ticket_code,
-
-      // Required for badge
       txId: form.txId || null,
       ticket_price: Number(form.ticket_price || 0),
       ticket_gst: Number(form.ticket_gst || 0),
       ticket_total: Number(form.ticket_total || 0),
-
       data: form,
       createdAt: new Date(),
       updatedAt: new Date(),
       added_by_admin: !!body.added_by_admin,
-      admin_created_at: body.added_by_admin ? new Date(body.admin_created_at || Date.now()) : undefined,
+      admin_created_at: body.added_by_admin
+        ? new Date(body.admin_created_at || Date.now())
+        : undefined,
     };
 
     const r = await coll.insertOne(doc);
@@ -214,29 +268,59 @@ router.post("/", async (req, res) => {
       mail: { queued: true },
     });
 
-    // Background email send (fire-and-forget)
+    scheduleDynamicReminder(db, "visitors", insertedId).catch((e) =>
+      console.error("[visitors] Reminder schedule failed:", e.message),
+    );
+    // ✅ Send notification to admin
+    (async () => {
+      try {
+        const allFields = JSON.stringify(doc, null, 2);
+        await mailer.sendMail({
+          to: "railtransexpo@gmail.com",
+          subject: `New Visitor Registration - ${doc.name || "Unknown"}`,
+          text: `New visitor registration received:\n\n${allFields}`,
+          html: `<h3>New Visitor Registration</h3><pre style="background:#f5f5f5;padding:10px;border-radius:5px;">${allFields}</pre>`,
+        });
+      } catch (e) {
+        console.error("[visitors] Notification email failed:", e);
+      }
+    })();
+
+    // ✅ Background ACK email send (NO TICKET - ticket comes after payment via webhook)
     (async () => {
       try {
         const savedDoc = await coll.findOne({ _id: r.insertedId });
         if (!savedDoc || !isEmailLike(savedDoc.email)) return;
 
-        console.log(`[DEBUG] Visitor created with company: "${savedDoc.company}"`);
+        console.log(
+          `[DEBUG] Visitor created with company: "${savedDoc.company}"`,
+        );
 
-        const result = await sendTicketEmail({
-          entity: "visitors",
-          record: savedDoc,
-          options: { forceSend: false, includeBadge: true },
-        });
-
-        if (result && result.success) {
-          await coll.updateOne({ _id: r.insertedId }, {
-            $set: { email_sent_at: new Date() },
-            $unset: { email_failed: "" }
+        const mail = buildVisitorAckEmail({ name: savedDoc.name });
+        try {
+          await mailer.sendMail({
+            to: savedDoc.email,
+            subject: mail.subject,
+            text: mail.text,
+            html: mail.html,
+            from: mail.from,
           });
-        } else {
-          await coll.updateOne({ _id: r.insertedId }, {
-            $set: { email_failed: true, email_failed_at: new Date() }
-          });
+          console.log("[visitors] ACK mail sent to", savedDoc.email);
+          await coll.updateOne(
+            { _id: r.insertedId },
+            {
+              $unset: { email_failed: "", email_failed_at: "" },
+              $set: { email_sent_at: new Date() },
+            },
+          );
+        } catch (e) {
+          console.error("[visitors] ACK mail failed:", e);
+          await coll.updateOne(
+            { _id: r.insertedId },
+            {
+              $set: { email_failed: true, email_failed_at: new Date() },
+            },
+          );
         }
       } catch (e) {
         console.error("[visitors] background email error:", e);
@@ -246,28 +330,34 @@ router.post("/", async (req, res) => {
     return;
   } catch (err) {
     console.error("[visitors] create error:", err);
-    return res.status(500).json({ success: false, error: "Failed to create visitor" });
+    return res
+      .status(500)
+      .json({ success: false, error: "Failed to create visitor" });
   }
 });
-
 /**
  * PUT /api/visitors/:id
- * Update visitor fields (admin/front-end edits). Returns updated doc. 
+ * Update visitor fields (admin/front-end edits). Returns updated doc.
  */
 router.put("/:id", async (req, res) => {
   const db = await obtainDb();
-  if (!db) return res.status(500).json({ success: false, error: "DB not ready" });
+  if (!db)
+    return res.status(500).json({ success: false, error: "DB not ready" });
 
   const id = req.params.id;
   const oid = toObjectId(id);
-  if (!oid) return res.status(400).json({ success: false, error: "Invalid id" });
+  if (!oid)
+    return res.status(400).json({ success: false, error: "Invalid id" });
 
   try {
     const fields = { ...(req.body || {}) };
     delete fields._id;
     delete fields.id;
 
-    if (Object.keys(fields).length === 0) return res.status(400).json({ success: false, error: "No fields to update" });
+    if (Object.keys(fields).length === 0)
+      return res
+        .status(400)
+        .json({ success: false, error: "No fields to update" });
 
     const update = {};
     for (const [k, v] of Object.entries(fields)) update[k] = v;
@@ -275,13 +365,18 @@ router.put("/:id", async (req, res) => {
 
     const coll = db.collection("visitors");
     const r = await coll.updateOne({ _id: oid }, { $set: update });
-    if (r.matchedCount === 0) return res.status(404).json({ success: false, error: "Visitor not found" });
+    if (r.matchedCount === 0)
+      return res
+        .status(404)
+        .json({ success: false, error: "Visitor not found" });
 
     const updated = await coll.findOne({ _id: oid });
     return res.json({ success: true, saved: updated });
   } catch (err) {
     console.error("[visitors] update error:", err && (err.stack || err));
-    return res.status(500).json({ success: false, error: "Failed to update visitor" });
+    return res
+      .status(500)
+      .json({ success: false, error: "Failed to update visitor" });
   }
 });
 
@@ -296,16 +391,20 @@ router.put("/:id", async (req, res) => {
  */
 router.post("/:id/resend-email", async (req, res) => {
   const db = await obtainDb();
-  if (!db) return res.status(500).json({ success: false, error: "DB not ready" });
+  if (!db)
+    return res.status(500).json({ success: false, error: "DB not ready" });
 
   const oid = toObjectId(req.params.id);
-  if (!oid) return res.status(400).json({ success: false, error: "Invalid ID" });
+  if (!oid)
+    return res.status(400).json({ success: false, error: "Invalid ID" });
 
   const coll = db.collection("visitors");
   const doc = await coll.findOne({ _id: oid });
-  if (!doc) return res.status(404).json({ success: false, error: "Visitor not found" });
+  if (!doc)
+    return res.status(404).json({ success: false, error: "Visitor not found" });
 
-  if (!isEmailLike(doc.email)) return res.status(400).json({ success: false, error: "Invalid email" });
+  if (!isEmailLike(doc.email))
+    return res.status(400).json({ success: false, error: "Invalid email" });
 
   try {
     const result = await sendTicketEmail({
@@ -314,17 +413,31 @@ router.post("/:id/resend-email", async (req, res) => {
     });
 
     if (result && result.success) {
-      await coll.updateOne({ _id: oid }, { $set: { email_sent_at: new Date() }, $unset: { email_failed: "" } });
+      await coll.updateOne(
+        { _id: oid },
+        { $set: { email_sent_at: new Date() }, $unset: { email_failed: "" } },
+      );
       return res.json({ success: true });
     }
 
     // send failed
-    await coll.updateOne({ _id: oid }, { $set: { email_failed: true, email_failed_at: new Date() } });
+    await coll.updateOne(
+      { _id: oid },
+      { $set: { email_failed: true, email_failed_at: new Date() } },
+    );
     console.error("[visitors] resend-email failed result:", result);
-    return res.status(500).json({ success: false, error: result && result.error ? result.error : "Failed to send email" });
+    return res.status(500).json({
+      success: false,
+      error: result && result.error ? result.error : "Failed to send email",
+    });
   } catch (err) {
     console.error("[visitors] resend mail error:", err && (err.stack || err));
-    await coll.updateOne({ _id: oid }, { $set: { email_failed: true, email_failed_at: new Date() } }).catch(() => { });
+    await coll
+      .updateOne(
+        { _id: oid },
+        { $set: { email_failed: true, email_failed_at: new Date() } },
+      )
+      .catch(() => {});
     return res.status(500).json({ success: false, error: "Mail send failed" });
   }
 });
@@ -334,14 +447,19 @@ router.post("/:id/resend-email", async (req, res) => {
  */
 router.delete("/:id", async (req, res) => {
   const db = await obtainDb();
-  if (!db) return res.status(500).json({ success: false, error: "DB not ready" });
+  if (!db)
+    return res.status(500).json({ success: false, error: "DB not ready" });
 
   const id = req.params.id;
   let result = null;
 
   try {
-    if (ObjectId.isValid(id)) result = await db.collection("visitors").deleteOne({ _id: new ObjectId(id) });
-    if (!result || result.deletedCount === 0) result = await db.collection("visitors").deleteOne({ ticket_code: id });
+    if (ObjectId.isValid(id))
+      result = await db
+        .collection("visitors")
+        .deleteOne({ _id: new ObjectId(id) });
+    if (!result || result.deletedCount === 0)
+      result = await db.collection("visitors").deleteOne({ ticket_code: id });
     if (!result?.deletedCount) return res.status(404).json({ success: false });
     return res.json({ success: true });
   } catch (err) {

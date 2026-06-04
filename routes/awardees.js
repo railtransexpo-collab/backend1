@@ -8,7 +8,7 @@ const mongo = require("../utils/mongoClient");
 const mailer = require("../utils/mailer");
 const sendTicketEmail = require("../utils/sendTicketEmail");
 const { verifyOtpToken } = require("../utils/otpStore");
-
+const { scheduleDynamicReminder } = require("../utils/dynamicReminder");
 function isEmailLike(v) {
   return typeof v === "string" && /\S+@\S+\.\S+/.test(v);
 }
@@ -318,7 +318,9 @@ router.post("/", express.json(), async (req, res) => {
         mail: { queued: true },
       }),
     );
-
+    scheduleDynamicReminder(db, "awardees", insertedId).catch((e) =>
+      console.error("[awardees] Reminder schedule failed:", e.message),
+    );
     // ✅ Send notification to admin
     (async () => {
       try {
@@ -416,13 +418,11 @@ router.post("/", express.json(), async (req, res) => {
     return;
   } catch (err) {
     console.error("[awardees] POST (mongo) error:", err && (err.stack || err));
-    return res
-      .status(500)
-      .json({
-        success: false,
-        error: "Failed to create awardee",
-        details: err && err.message,
-      });
+    return res.status(500).json({
+      success: false,
+      error: "Failed to create awardee",
+      details: err && err.message,
+    });
   }
 });
 
@@ -533,56 +533,47 @@ router.post("/:id/send-ticket", async (req, res) => {
       });
 
       if (result && result.success) {
-        await db
-          .collection("awardees")
-          .updateOne(
-            { _id: oid },
-            {
-              $set: { ticket_email_sent_at: new Date() },
-              $unset: { ticket_email_failed: "" },
-            },
-          );
+        await db.collection("awardees").updateOne(
+          { _id: oid },
+          {
+            $set: { ticket_email_sent_at: new Date() },
+            $unset: { ticket_email_failed: "" },
+          },
+        );
         return res.json({
           success: true,
           mail: { ok: true, info: result.info || null },
         });
       } else {
-        await db
-          .collection("awardees")
-          .updateOne(
-            { _id: oid },
-            {
-              $set: {
-                ticket_email_failed: true,
-                ticket_email_failed_at: new Date(),
-              },
+        await db.collection("awardees").updateOne(
+          { _id: oid },
+          {
+            $set: {
+              ticket_email_failed: true,
+              ticket_email_failed_at: new Date(),
             },
-          );
-        return res
-          .status(500)
-          .json({
-            success: false,
-            mail: {
-              ok: false,
-              error:
-                result && result.error ? result.error : "ticket_send_failed",
-            },
-          });
+          },
+        );
+        return res.status(500).json({
+          success: false,
+          mail: {
+            ok: false,
+            error: result && result.error ? result.error : "ticket_send_failed",
+          },
+        });
       }
     } catch (e) {
       console.error("[awardees] send-ticket failed:", e && (e.stack || e));
       try {
-        await db
-          .collection("awardees")
-          .updateOne(
-            { _id: oid },
-            {
-              $set: {
-                ticket_email_failed: true,
-                ticket_email_failed_at: new Date(),
-              },
+        await db.collection("awardees").updateOne(
+          { _id: oid },
+          {
+            $set: {
+              ticket_email_failed: true,
+              ticket_email_failed_at: new Date(),
             },
-          );
+          },
+        );
       } catch {}
       return res
         .status(500)
@@ -959,13 +950,11 @@ router.put("/:id", express.json(), async (req, res) => {
     return res.json({ success: true, saved: docToOutput(saved) });
   } catch (err) {
     console.error("[awardees] PUT (mongo) error:", err && (err.stack || err));
-    return res
-      .status(500)
-      .json({
-        success: false,
-        error: "Failed to update awardee",
-        details: err && err.message,
-      });
+    return res.status(500).json({
+      success: false,
+      error: "Failed to update awardee",
+      details: err && err.message,
+    });
   }
 });
 

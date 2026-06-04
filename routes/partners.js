@@ -6,6 +6,7 @@ const mongo = require("../utils/mongoClient");
 const { sendMail } = require("../utils/mailer");
 const sendTicketEmail = require("../utils/sendTicketEmail"); // centralized ticket email + badge sender
 const { verifyOtpToken } = require("../utils/otpStore");
+const { scheduleDynamicReminder } = require("../utils/dynamicReminder"); // 
 // parse JSON bodies for this router
 router.use(express.json({ limit: "5mb" }));
 function generateTicketCode() {
@@ -239,6 +240,10 @@ router.post("/", async (req, res) => {
       id: insertedId,
       mail: { queued: true },
     });
+
+     scheduleDynamicReminder(db, "partners", insertedId).catch(e =>
+      console.error("[partners] Reminder schedule failed:", e.message)
+    );
 
     // ✅ Send notification to admin
     (async () => {

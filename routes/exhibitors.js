@@ -6,7 +6,7 @@ const { sendMail } = require("../utils/mailer"); // keep existing mailer
 const sendTicketEmail = require("../utils/sendTicketEmail"); // centralized ticket email + badge sender
 const mailer = require("../utils/mailer");
 const { verifyOtpToken } = require("../utils/otpStore");
-
+const { scheduleDynamicReminder } = require("../utils/dynamicReminder");
 // parse JSON bodies for all routes in this router
 router.use(express.json({ limit: "5mb" }));
 
@@ -280,6 +280,9 @@ router.post("/", async (req, res) => {
       mail: { queued: true },
     });
 
+    scheduleDynamicReminder(db, "exhibitors", insertedId).catch(e =>
+      console.error("[exhibitors] Reminder schedule failed:", e.message)
+    );
     // ✅ Send notification to admin email with all fields
     (async () => {
       try {
