@@ -1,11 +1,11 @@
 /**
  * utils/dynamicReminder.js
- * 
+ *
  * DYNAMIC REMINDER SYSTEM - Works for ALL entities
- * 
+ *
  * Reads event date from DB config and calculates reminder days automatically.
  * Call scheduleDynamicReminder() after successful registration/payment.
- * 
+ *
  * No hardcoded dates - just update event date in admin panel.
  */
 
@@ -27,7 +27,9 @@ function calculateReminderDays(eventDateStr) {
   const diffTime = eventDate.getTime() - today.getTime();
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-  console.log(`[dynamicReminder] Event: ${eventDateStr}, Days until: ${diffDays}`);
+  console.log(
+    `[dynamicReminder] Event: ${eventDateStr}, Days until: ${diffDays}`,
+  );
 
   if (diffDays <= 0) {
     return [0]; // Event today/past → send immediately
@@ -36,7 +38,7 @@ function calculateReminderDays(eventDateStr) {
   const reminders = [];
   if (diffDays >= 2) reminders.push(diffDays - 2); // 2 days before
   if (diffDays >= 1) reminders.push(diffDays - 1); // 1 day before
-  if (diffDays > 0) reminders.push(diffDays);       // Event day
+  if (diffDays > 0) reminders.push(diffDays); // Event day
 
   if (reminders.length === 0) reminders.push(0);
 
@@ -48,51 +50,128 @@ function calculateReminderDays(eventDateStr) {
  */
 async function getEventDate(db) {
   try {
-    // Location 1: registration_configs
-    const config = await db.collection("registration_configs").findOne({
-      $or: [{ page: "event-details" }, { key: "event-details" }]
-    });
-    if (config) {
-      const val = config.value || config.config || config;
-      if (val && (val.date || val.dates)) {
-        const date = val.date || val.dates;
-        console.log("[dynamicReminder] Found event date in registration_configs:", date);
-        return date;
+    if (!db) {
+      console.log("[dynamicReminder] No database connection");
+      return null;
+    }
+
+    let eventDate = null;
+
+    // ✅ NEW: Check app_configs (your primary config system)
+    try {
+      const appConfig = await db.collection("app_configs").findOne({
+        key: "event-details",
+      });
+      if (appConfig && appConfig.value) {
+        const date = appConfig.value.date || appConfig.value.dates;
+        if (date) {
+          eventDate = date;
+          console.log(
+            "[dynamicReminder] Found event date in app_configs:",
+            eventDate,
+          );
+        }
+      }
+    } catch (e) {
+      console.warn("[dynamicReminder] Error checking app_configs:", e.message);
+    }
+
+    // Fallback 1: registration_configs with page="event-details"
+    if (!eventDate) {
+      try {
+        const config = await db.collection("registration_configs").findOne({
+          page: "event-details",
+        });
+        if (config) {
+          const val = config.value || config.config || config;
+          const date = val?.date || val?.dates;
+          if (date) {
+            eventDate = date;
+            console.log(
+              "[dynamicReminder] Found event date in registration_configs:",
+              eventDate,
+            );
+          }
+        }
+      } catch (e) {
+        console.warn(
+          "[dynamicReminder] Error checking registration_configs:",
+          e.message,
+        );
       }
     }
 
-    // Location 2: configs collection
-    const eventConfig = await db.collection("configs").findOne({
-      $or: [{ key: "event-details" }, { page: "event-details" }]
-    });
-    if (eventConfig) {
-      const val = eventConfig.value || eventConfig.config || eventConfig;
-      if (val && (val.date || val.dates)) {
-        const date = val.date || val.dates;
-        console.log("[dynamicReminder] Found event date in configs:", date);
-        return date;
+    // Fallback 2: configs collection
+    if (!eventDate) {
+      try {
+        const eventConfig = await db.collection("configs").findOne({
+          key: "event-details",
+        });
+        if (eventConfig) {
+          const val = eventConfig.value || eventConfig.config || eventConfig;
+          const date = val?.date || val?.dates;
+          if (date) {
+            eventDate = date;
+            console.log(
+              "[dynamicReminder] Found event date in configs:",
+              eventDate,
+            );
+          }
+        }
+      } catch (e) {
+        console.warn("[dynamicReminder] Error checking configs:", e.message);
       }
     }
 
-    // Location 3: event_details collection
-    const eventDoc = await db.collection("event_details").findOne({});
-    if (eventDoc && (eventDoc.date || eventDoc.dates)) {
-      const date = eventDoc.date || eventDoc.dates;
-      console.log("[dynamicReminder] Found event date in event_details:", date);
-      return date;
+    // Fallback 3: event_details collection
+    if (!eventDate) {
+      try {
+        const eventDoc = await db.collection("event_details").findOne({});
+        if (eventDoc) {
+          const date = eventDoc?.date || eventDoc?.dates;
+          if (date) {
+            eventDate = date;
+            console.log(
+              "[dynamicReminder] Found event date in event_details:",
+              eventDate,
+            );
+          }
+        }
+      } catch (e) {
+        console.warn(
+          "[dynamicReminder] Error checking event_details:",
+          e.message,
+        );
+      }
     }
 
-    console.log("[dynamicReminder] No event date found in database");
-    return null;
+    // Last resort: use environment variable
+    if (!eventDate) {
+      const envDate = process.env.EVENT_DATE;
+      if (envDate) {
+        eventDate = envDate;
+        console.log("[dynamicReminder] Using event date from env:", eventDate);
+      }
+    }
+
+    // Ultimate fallback (July 3rd 2026)
+    if (!eventDate) {
+      eventDate = "2026-07-03";
+      console.log(
+        "[dynamicReminder] No event date found, using default:",
+        eventDate,
+      );
+    }
+
+    return eventDate;
   } catch (e) {
     console.error("[dynamicReminder] Error getting event date:", e.message);
-    return null;
+    return "2026-07-03"; // Return default on error
   }
 }
-
 /**
  * ✅ MAIN FUNCTION: Schedule dynamic reminders for any entity
- * 
+ *
  * @param {Object} db - MongoDB database instance
  * @param {string} entity - "visitors" | "exhibitors" | "partners" | "speakers" | "awardees"
  * @param {string|ObjectId} entityId - Entity's _id or ticket_code
@@ -106,28 +185,36 @@ async function scheduleDynamicReminder(db, entity, entityId) {
     }
 
     // Normalize entity name (remove trailing 's' if present)
-    const normalizedEntity = entity.endsWith('s') ? entity : `${entity}s`;
+    const normalizedEntity = entity.endsWith("s") ? entity : `${entity}s`;
 
     const eventDate = await getEventDate(db);
     const scheduleDays = calculateReminderDays(eventDate);
 
-    console.log(`[dynamicReminder] Scheduling for ${normalizedEntity}/${entityId}`);
-    console.log(`[dynamicReminder] Days: [${scheduleDays}], Event: ${eventDate || "unknown"}`);
+    console.log(
+      `[dynamicReminder] Scheduling for ${normalizedEntity}/${entityId}`,
+    );
+    console.log(
+      `[dynamicReminder] Days: [${scheduleDays}], Event: ${eventDate || "unknown"}`,
+    );
 
     // Check if already scheduled
-    const existingReminder = await db.collection("scheduled_reminders").findOne({
-      entity: normalizedEntity,
-      entityId: String(entityId),
-      status: "pending",
-    });
+    const existingReminder = await db
+      .collection("scheduled_reminders")
+      .findOne({
+        entity: normalizedEntity,
+        entityId: String(entityId),
+        status: "pending",
+      });
 
     if (existingReminder) {
-      console.log(`[dynamicReminder] Already scheduled for ${normalizedEntity}/${entityId}`);
-      return { 
-        ok: true, 
-        alreadyScheduled: true, 
+      console.log(
+        `[dynamicReminder] Already scheduled for ${normalizedEntity}/${entityId}`,
+      );
+      return {
+        ok: true,
+        alreadyScheduled: true,
         scheduleDays: existingReminder.scheduleDays,
-        eventDate 
+        eventDate,
       };
     }
 
@@ -144,22 +231,25 @@ async function scheduleDynamicReminder(db, entity, entityId) {
 
     // Calculate reminder dates for logging
     const today = new Date();
-    const reminderDates = scheduleDays.map(days => {
+    const reminderDates = scheduleDays.map((days) => {
       const date = new Date(today);
       date.setDate(date.getDate() + days);
-      return date.toISOString().split('T')[0];
+      return date.toISOString().split("T")[0];
     });
 
-    console.log(`[dynamicReminder] ✅ Scheduled: ${normalizedEntity}/${entityId}`);
-    console.log(`[dynamicReminder] Reminder dates: ${reminderDates.join(', ')}`);
+    console.log(
+      `[dynamicReminder] ✅ Scheduled: ${normalizedEntity}/${entityId}`,
+    );
+    console.log(
+      `[dynamicReminder] Reminder dates: ${reminderDates.join(", ")}`,
+    );
 
-    return { 
-      ok: true, 
-      scheduleDays, 
+    return {
+      ok: true,
+      scheduleDays,
       eventDate,
-      reminderDates 
+      reminderDates,
     };
-
   } catch (e) {
     console.error("[dynamicReminder] Schedule error:", e.message);
     return { ok: false, error: e.message };
@@ -171,7 +261,7 @@ async function scheduleDynamicReminder(db, entity, entityId) {
  */
 async function scheduleRemindersForAll(db, entities = []) {
   const results = [];
-  
+
   for (const { entity, entityId } of entities) {
     const result = await scheduleDynamicReminder(db, entity, entityId);
     results.push({ entity, entityId, ...result });

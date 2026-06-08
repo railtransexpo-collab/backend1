@@ -20,7 +20,23 @@ const mongoClient = require("../utils/mongoClient"); // uses getDb() or .db
 
 const router = express.Router();
 const crypto = require("crypto");
+// Add this near the top with other helpers
+let dbConnectionRetries = 0;
+const MAX_RETRIES = 3;
 
+async function obtainDbWithRetry() {
+  for (let i = 0; i < MAX_RETRIES; i++) {
+    try {
+      const db = await obtainDb();
+      if (db) return db;
+      await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+    } catch (err) {
+      console.warn(`[otp] DB connection attempt ${i + 1} failed:`, err.message);
+      if (i === MAX_RETRIES - 1) throw err;
+    }
+  }
+  throw new Error("Could not connect to database after retries");
+}
 // Global store so it survives hot reloads in dev
 const otpVerifiedStore =
   global._otpVerifiedStore || (global._otpVerifiedStore = new Map());
@@ -122,8 +138,12 @@ const KNOWN_COLLECTIONS = ["visitors", "exhibitors", "partners", "speakers", "aw
 */
 async function findExistingByEmailMongo(emailRaw, registrationType) {
   try {
-    const db = await obtainDb();
-    if (!db) return null;
+    const db = await obtainDbWithRetry(); // Use retry version
+    if (!db) {
+      console.warn("[otp] No database connection, returning null");
+      return null;
+    }
+    
     const emailNorm = normalizeEmail(emailRaw);
     if (!emailNorm) return null;
 
@@ -160,7 +180,11 @@ async function findExistingByEmailMongo(emailRaw, registrationType) {
         if (colName === "registrants" && role) q.role = role;
 
         const projection = { _id: 1, ticket_code: 1, name: 1, company: 1, mobile: 1, email: 1, data: 1, form: 1, role: 1 };
-        const doc = await coll.findOne(q, { projection });
+        const doc = await coll.findOne(q, { projection }).catch(err => {
+          console.warn(`[otp] Query failed on ${colName}:`, err.message);
+          return null;
+        });
+        
         if (!doc) continue;
 
         let matchedPath = null;
@@ -202,25 +226,57 @@ async function findExistingByEmailMongo(emailRaw, registrationType) {
     return null;
   } catch (err) {
     console.error("[otp] findExistingByEmailMongo error:", err && (err.stack || err.message || err));
+    // Return null instead of throwing - allow registration to proceed
     return null;
   }
 }
-
 /* ---------- check-email endpoint ---------- */
 router.get("/check-email", async (req, res) => {
   try {
+    // Set timeout for the entire request
+    req.setTimeout(10000); // 10 second timeout
+    res.setTimeout(10000);
+    
     const email = normalizeEmail(req.query.email || "");
     const registrationType = String(req.query.type || "").trim();
 
-    if (!isValidEmail(email)) return res.status(400).json({ success: false, error: "invalid email" });
-    if (!registrationType) return res.status(400).json({ success: false, error: "missing registrationType" });
+    console.log(`[otp/check-email] Request: email=${email}, type=${registrationType}`);
 
-    const info = await findExistingByEmailMongo(email, registrationType);
-    if (info) return res.json({ success: true, found: true, info });
+    if (!isValidEmail(email)) {
+      console.log(`[otp/check-email] Invalid email: ${email}`);
+      return res.status(400).json({ success: false, error: "invalid email" });
+    }
+    
+    if (!registrationType) {
+      console.log(`[otp/check-email] Missing registrationType`);
+      return res.status(400).json({ success: false, error: "missing registrationType" });
+    }
+
+    // Add a timeout promise wrapper
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Database query timeout')), 8000);
+    });
+
+    const findPromise = findExistingByEmailMongo(email, registrationType);
+    const info = await Promise.race([findPromise, timeoutPromise]);
+
+    if (info) {
+      console.log(`[otp/check-email] Email found: ${email}`);
+      return res.json({ success: true, found: true, info });
+    }
+    
+    console.log(`[otp/check-email] Email not found: ${email}`);
     return res.json({ success: true, found: false });
+    
   } catch (err) {
     console.error("[otp/check-email] error:", err && (err.stack || err.message || err));
-    return res.status(500).json({ success: false, error: "server error" });
+    // Don't return 500 - return a graceful error that frontend can handle
+    return res.status(200).json({ 
+      success: false, 
+      found: false, 
+      error: "Service temporarily unavailable, please try again",
+      fallback: true 
+    });
   }
 });
 
@@ -414,5 +470,13 @@ router.post("/verify", express.json({ limit: "2mb" }), async (req, res) => {
   }
 });
 
-
+/* ---------- health check ---------- */
+router.get("/health", (req, res) => {
+  res.json({ 
+    status: "ok", 
+    timestamp: new Date().toISOString(),
+    storeSize: otpStore.size,
+    mongoAvailable: !!mongoClient
+  });
+});
 module.exports = router;
