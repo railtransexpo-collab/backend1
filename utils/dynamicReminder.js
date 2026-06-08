@@ -4,10 +4,37 @@
  * DYNAMIC REMINDER SYSTEM - Works for ALL entities
  *
  * Reads event date from DB config and calculates reminder days automatically.
- * Call scheduleDynamicReminder() after successful registration/payment.
- *
- * No hardcoded dates - just update event date in admin panel.
+ * Fixed reminder dates (June 26, 27, 29) are calculated RELATIVE to event date.
  */
+
+/**
+ * Calculate fixed reminder dates based on event date
+ * Returns array of dates (June 26, 27, 29) in YYYY-MM-DD format
+ * These are calculated as (eventDate.getMonth() === 6) ? June dates : default
+ */
+function getFixedReminderDatesFromEvent(eventDate) {
+  if (!eventDate) return null;
+  
+  const event = new Date(eventDate);
+  const year = event.getFullYear();
+  const month = event.getMonth(); // June = 5, July = 6
+  
+  // If event is in July (month 6), then reminders are in June (month 5)
+  if (month === 6) { // July
+    return [
+      new Date(year, 5, 26), // June 26
+      new Date(year, 5, 27), // June 27
+      new Date(year, 5, 29), // June 29
+    ];
+  }
+  
+  // Default: if event not in July, use same year but June dates
+  return [
+    new Date(year, 5, 26),
+    new Date(year, 5, 27),
+    new Date(year, 5, 29),
+  ];
+}
 
 /**
  * Calculate days until event from today
@@ -15,8 +42,8 @@
  */
 function calculateReminderDays(eventDateStr) {
   if (!eventDateStr) {
-    console.log("[dynamicReminder] No event date, using fallback [2, 1, 0]");
-    return [2, 1, 0];
+    console.log("[dynamicReminder] No event date, using fallback [10, 5, 2, 1, 0]");
+    return [10, 5, 2, 1, 0];
   }
 
   const eventDate = new Date(eventDateStr);
@@ -32,17 +59,49 @@ function calculateReminderDays(eventDateStr) {
   );
 
   if (diffDays <= 0) {
-    return [0]; // Event today/past → send immediately
+    return [0];
   }
 
   const reminders = [];
-  if (diffDays >= 2) reminders.push(diffDays - 2); // 2 days before
-  if (diffDays >= 1) reminders.push(diffDays - 1); // 1 day before
-  if (diffDays > 0) reminders.push(diffDays); // Event day
+  
+  // Send reminders before event
+  if (diffDays >= 10) reminders.push(diffDays - 10);
+  if (diffDays >= 5) reminders.push(diffDays - 5);
+  if (diffDays >= 2) reminders.push(diffDays - 2);
+  if (diffDays >= 1) reminders.push(diffDays - 1);
+  reminders.push(diffDays); // Event day
 
   if (reminders.length === 0) reminders.push(0);
 
   return reminders;
+}
+
+/**
+ * Calculate days from today to fixed reminder dates (June 26, 27, 29)
+ * These dates are calculated from the event date
+ */
+function calculateDaysToFixedDates(eventDateStr) {
+  if (!eventDateStr) return [];
+  
+  const fixedDates = getFixedReminderDatesFromEvent(eventDateStr);
+  if (!fixedDates || fixedDates.length === 0) return [];
+  
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  const scheduleDays = [];
+  
+  for (const reminderDate of fixedDates) {
+    reminderDate.setHours(0, 0, 0, 0);
+    const diffTime = reminderDate.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays >= 0) {
+      scheduleDays.push(diffDays);
+    }
+  }
+  
+  return scheduleDays;
 }
 
 /**
@@ -57,7 +116,7 @@ async function getEventDate(db) {
 
     let eventDate = null;
 
-    // ✅ NEW: Check app_configs (your primary config system)
+    // Check app_configs (your primary config system)
     try {
       const appConfig = await db.collection("app_configs").findOne({
         key: "event-details",
@@ -154,23 +213,15 @@ async function getEventDate(db) {
       }
     }
 
-    // Ultimate fallback (July 3rd 2026)
-    if (!eventDate) {
-      eventDate = "2026-07-03";
-      console.log(
-        "[dynamicReminder] No event date found, using default:",
-        eventDate,
-      );
-    }
-
     return eventDate;
   } catch (e) {
     console.error("[dynamicReminder] Error getting event date:", e.message);
-    return "2026-07-03"; // Return default on error
+    return null;
   }
 }
+
 /**
- * ✅ MAIN FUNCTION: Schedule dynamic reminders for any entity
+ * MAIN FUNCTION: Schedule dynamic reminders for any entity
  *
  * @param {Object} db - MongoDB database instance
  * @param {string} entity - "visitors" | "exhibitors" | "partners" | "speakers" | "awardees"
@@ -184,18 +235,37 @@ async function scheduleDynamicReminder(db, entity, entityId) {
       return { ok: false, error: "Missing params" };
     }
 
-    // Normalize entity name (remove trailing 's' if present)
+    // Normalize entity name
     const normalizedEntity = entity.endsWith("s") ? entity : `${entity}s`;
 
     const eventDate = await getEventDate(db);
-    const scheduleDays = calculateReminderDays(eventDate);
+    
+    if (!eventDate) {
+      console.log("[dynamicReminder] No event date found, cannot schedule reminders");
+      return { ok: false, error: "No event date configured" };
+    }
+    
+    // Get dynamic schedule days based on event date
+    const dynamicScheduleDays = calculateReminderDays(eventDate);
+    
+    // Get fixed schedule days based on June 26, 27, 29 (calculated from event date)
+    const fixedScheduleDays = calculateDaysToFixedDates(eventDate);
+    
+    // Get the actual fixed reminder dates for logging
+    const fixedReminderDatesObj = getFixedReminderDatesFromEvent(eventDate);
+    const fixedReminderDatesStr = fixedReminderDatesObj.map(d => 
+      d.toISOString().split('T')[0]
+    );
+    
+    // Combine both sets of reminders, remove duplicates, sort
+    const allScheduleDays = [...new Set([...dynamicScheduleDays, ...fixedScheduleDays])].sort((a, b) => a - b);
 
-    console.log(
-      `[dynamicReminder] Scheduling for ${normalizedEntity}/${entityId}`,
-    );
-    console.log(
-      `[dynamicReminder] Days: [${scheduleDays}], Event: ${eventDate || "unknown"}`,
-    );
+    console.log(`[dynamicReminder] Scheduling for ${normalizedEntity}/${entityId}`);
+    console.log(`[dynamicReminder] Event date from DB: ${eventDate}`);
+    console.log(`[dynamicReminder] Fixed reminder dates (calculated): ${fixedReminderDatesStr.join(", ")}`);
+    console.log(`[dynamicReminder] Dynamic days (before event): [${dynamicScheduleDays.join(", ")}]`);
+    console.log(`[dynamicReminder] Fixed days from today: [${fixedScheduleDays.join(", ")}]`);
+    console.log(`[dynamicReminder] Combined schedule days: [${allScheduleDays.join(", ")}]`);
 
     // Check if already scheduled
     const existingReminder = await db
@@ -207,14 +277,13 @@ async function scheduleDynamicReminder(db, entity, entityId) {
       });
 
     if (existingReminder) {
-      console.log(
-        `[dynamicReminder] Already scheduled for ${normalizedEntity}/${entityId}`,
-      );
+      console.log(`[dynamicReminder] Already scheduled for ${normalizedEntity}/${entityId}`);
       return {
         ok: true,
         alreadyScheduled: true,
         scheduleDays: existingReminder.scheduleDays,
         eventDate,
+        fixedReminderDates: fixedReminderDatesStr,
       };
     }
 
@@ -222,8 +291,11 @@ async function scheduleDynamicReminder(db, entity, entityId) {
     await db.collection("scheduled_reminders").insertOne({
       entity: normalizedEntity,
       entityId: String(entityId),
-      eventDate: eventDate ? new Date(eventDate) : null,
-      scheduleDays,
+      eventDate: new Date(eventDate),
+      scheduleDays: allScheduleDays,
+      dynamicScheduleDays,
+      fixedScheduleDays,
+      fixedReminderDates: fixedReminderDatesStr,
       status: "pending",
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -231,24 +303,23 @@ async function scheduleDynamicReminder(db, entity, entityId) {
 
     // Calculate reminder dates for logging
     const today = new Date();
-    const reminderDates = scheduleDays.map((days) => {
+    const reminderDates = allScheduleDays.map((days) => {
       const date = new Date(today);
       date.setDate(date.getDate() + days);
       return date.toISOString().split("T")[0];
     });
 
-    console.log(
-      `[dynamicReminder] ✅ Scheduled: ${normalizedEntity}/${entityId}`,
-    );
-    console.log(
-      `[dynamicReminder] Reminder dates: ${reminderDates.join(", ")}`,
-    );
+    console.log(`[dynamicReminder] Scheduled: ${normalizedEntity}/${entityId}`);
+    console.log(`[dynamicReminder] Reminder dates: ${reminderDates.join(", ")}`);
 
     return {
       ok: true,
-      scheduleDays,
+      scheduleDays: allScheduleDays,
+      dynamicScheduleDays,
+      fixedScheduleDays,
       eventDate,
       reminderDates,
+      fixedReminderDates: fixedReminderDatesStr,
     };
   } catch (e) {
     console.error("[dynamicReminder] Schedule error:", e.message);
@@ -257,7 +328,7 @@ async function scheduleDynamicReminder(db, entity, entityId) {
 }
 
 /**
- * ✅ Schedule reminders for multiple entities at once
+ * Schedule reminders for multiple entities at once
  */
 async function scheduleRemindersForAll(db, entities = []) {
   const results = [];
@@ -275,4 +346,6 @@ module.exports = {
   scheduleRemindersForAll,
   calculateReminderDays,
   getEventDate,
+  getFixedReminderDatesFromEvent,
+  calculateDaysToFixedDates,
 };
