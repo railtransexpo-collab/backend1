@@ -16,7 +16,10 @@ function checkOtpToken(role, email, token) {
   const key = `verified::${role}::${email.toLowerCase()}`;
   const info = store.get(key);
   if (!info || info.token !== token) return false;
-  if (info.expires < Date.now()) { store.delete(key); return false; }
+  if (info.expires < Date.now()) {
+    store.delete(key);
+    return false;
+  }
   store.delete(key);
   return true;
 }
@@ -27,12 +30,17 @@ async function obtainDb() {
     if (typeof mongo.getDb === "function") return await mongo.getDb();
     if (mongo.db) return mongo.db;
     return null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 function toObjectId(id) {
-  try { return new ObjectId(String(id)); }
-  catch { return null; }
+  try {
+    return new ObjectId(String(id));
+  } catch {
+    return null;
+  }
 }
 
 function isEmailLike(v) {
@@ -74,21 +82,28 @@ www.railtransexpo.com`;
 +91 9211675505, +91 8527599895<br/>
 <a href="https://www.railtransexpo.com">www.railtransexpo.com</a></p>`;
 
-  const from = process.env.MAIL_FROM || "RailTrans Expo <support@railtransexpo.com>";
+  const from =
+    process.env.MAIL_FROM || "RailTrans Expo <support@railtransexpo.com>";
   return { subject, text, html, from };
 }
 
 /* ========== GET / ========== */
 router.get("/", async (req, res) => {
   const db = await obtainDb();
-  if (!db) return res.status(500).json({ success: false, error: "DB not ready" });
+  if (!db)
+    return res.status(500).json({ success: false, error: "DB not ready" });
   try {
-    const rows = await db.collection("visitors").find({}).sort({ createdAt: -1 }).toArray();
+    const rows = await db
+      .collection("visitors")
+      .find({})
+      .sort({ createdAt: -1 })
+      .toArray();
     const flattened = rows.map((r) => {
       const flat = { ...r };
       if (flat.data && typeof flat.data === "object") {
         for (const [key, value] of Object.entries(flat.data)) {
-          if (!(key in flat) || flat[key] === undefined || flat[key] === null) flat[key] = value;
+          if (!(key in flat) || flat[key] === undefined || flat[key] === null)
+            flat[key] = value;
         }
       }
       if (flat._id) flat.id = String(flat._id);
@@ -97,25 +112,30 @@ router.get("/", async (req, res) => {
     return res.json({ success: true, data: flattened });
   } catch (err) {
     console.error("[visitors] list error:", err && (err.stack || err));
-    return res.status(500).json({ success: false, error: "Failed to list visitors" });
+    return res
+      .status(500)
+      .json({ success: false, error: "Failed to list visitors" });
   }
 });
 
 /* ========== GET /:id ========== */
 router.get("/:id", async (req, res) => {
   const db = await obtainDb();
-  if (!db) return res.status(500).json({ success: false, error: "DB not ready" });
+  if (!db)
+    return res.status(500).json({ success: false, error: "DB not ready" });
   const id = req.params.id;
   let doc = null;
   const coll = db.collection("visitors");
   const oid = toObjectId(id);
   if (oid) doc = await coll.findOne({ _id: oid }).catch(() => null);
   if (!doc) doc = await coll.findOne({ ticket_code: id }).catch(() => null);
-  if (!doc) return res.status(404).json({ success: false, error: "Visitor not found" });
+  if (!doc)
+    return res.status(404).json({ success: false, error: "Visitor not found" });
   const flat = { ...doc };
   if (flat.data && typeof flat.data === "object") {
     for (const [key, value] of Object.entries(flat.data)) {
-      if (!(key in flat) || flat[key] === undefined || flat[key] === null) flat[key] = value;
+      if (!(key in flat) || flat[key] === undefined || flat[key] === null)
+        flat[key] = value;
     }
   }
   if (flat._id) flat.id = String(flat._id);
@@ -125,27 +145,40 @@ router.get("/:id", async (req, res) => {
 /* ========== POST / ========== */
 router.post("/", async (req, res) => {
   const db = await obtainDb();
-  if (!db) return res.status(500).json({ success: false, error: "DB not ready" });
+  if (!db)
+    return res.status(500).json({ success: false, error: "DB not ready" });
 
   try {
     const body = req.body || {};
     const form = body.form || body || {};
     const email = String(form.email || "").trim();
-    if (!isEmailLike(email)) return res.status(400).json({ success: false, message: "Valid email required" });
+    if (!isEmailLike(email))
+      return res
+        .status(400)
+        .json({ success: false, message: "Valid email required" });
 
     const isAdminCreate = !!body.added_by_admin;
     const verificationToken = body.verificationToken || form.verificationToken;
 
     if (!isAdminCreate) {
-      const isValid = await verifyOtpToken(db, "visitor", email, verificationToken);
-      if (!isValid) return res.status(403).json({ success: false, error: "Email not verified via OTP" });
+      const isValid = await verifyOtpToken(
+        db,
+        "visitor",
+        email,
+        verificationToken,
+      );
+      if (!isValid)
+        return res
+          .status(403)
+          .json({ success: false, error: "Email not verified via OTP" });
     }
 
     const coll = db.collection("visitors");
     let ticket_code = form.ticket_code;
     if (!ticket_code) {
-      do { ticket_code = String(Math.floor(100000 + Math.random() * 900000)); }
-      while (await coll.findOne({ ticket_code }));
+      do {
+        ticket_code = String(Math.floor(100000 + Math.random() * 900000));
+      } while (await coll.findOne({ ticket_code }));
     }
 
     let company = "";
@@ -171,129 +204,177 @@ router.post("/", async (req, res) => {
       createdAt: new Date(),
       updatedAt: new Date(),
       added_by_admin: !!body.added_by_admin,
-      admin_created_at: body.added_by_admin ? new Date(body.admin_created_at || Date.now()) : undefined,
+      admin_created_at: body.added_by_admin
+        ? new Date(body.admin_created_at || Date.now())
+        : undefined,
     };
 
     const r = await coll.insertOne(doc);
     const insertedId = r.insertedId ? String(r.insertedId) : null;
 
-    res.json({ success: true, insertedId, ticket_code, mail: { queued: true } });
+    res.json({
+      success: true,
+      insertedId,
+      ticket_code,
+      mail: { queued: true },
+    });
 
     // Schedule dynamic reminder
     scheduleDynamicReminder(db, "visitors", insertedId).catch((e) =>
-      console.error("[visitors] Reminder schedule failed:", e.message)
+      console.error("[visitors] Reminder schedule failed:", e.message),
     );
 
-    // Send notification to admin
-    (async () => {
-      try {
-        const allFields = JSON.stringify(doc, null, 2);
-        await mailer.sendMail({
-          to: "railtransexpo@gmail.com",
-          subject: `New Visitor Registration - ${doc.name || "Unknown"}`,
-          text: `New visitor registration received:\n\n${allFields}`,
-          html: `<h3>New Visitor Registration</h3><pre style="background:#f5f5f5;padding:10px;border-radius:5px;">${allFields}</pre>`,
-        });
-      } catch (e) { console.error("[visitors] Notification email failed:", e); }
-    })();
-
-    // ✅ Background email: TICKET for admin, ACK for regular users
+    // ✅ Send TICKET email to registrant (NO admin notification email)
     (async () => {
       try {
         const savedDoc = await coll.findOne({ _id: r.insertedId });
         if (!savedDoc || !isEmailLike(savedDoc.email)) return;
 
-        console.log(`[DEBUG] Visitor created. Admin: ${isAdminCreate}, Company: "${savedDoc.company}"`);
+        console.log(
+          `[DEBUG] Visitor created. Admin: ${isAdminCreate}, Ticket Total: ${savedDoc.ticket_total}, TxId: ${savedDoc.txId}`,
+        );
 
-        if (isAdminCreate) {
-          // Admin created → Send TICKET email with badge/QR
+        // Check if payment is pending verification
+        const isPaidTicket = savedDoc.ticket_total > 0;
+        const hasPaymentProof = !!savedDoc.txId;
+        const needsVerification = isPaidTicket && !hasPaymentProof;
+
+        if (needsVerification) {
+          // Paid ticket without proof → Send ACK email (waiting for verification)
+          const mail = buildVisitorAckEmail({ name: savedDoc.name });
+          await mailer.sendMail({
+            to: savedDoc.email,
+            subject: mail.subject,
+            text: mail.text,
+            html: mail.html,
+            from: mail.from,
+          });
+          console.log("[visitors] ACK mail sent to", savedDoc.email);
+          await coll.updateOne(
+            { _id: r.insertedId },
+            {
+              $unset: { email_failed: "", email_failed_at: "" },
+              $set: { email_sent_at: new Date() },
+            },
+          );
+        } else {
+          // Send TICKET email immediately for:
+          // - Free registrations (ticket_total = 0)
+          // - Paid with proof (txId exists)
+          // - Admin created registrations
           const result = await sendTicketEmail({
             entity: "visitors",
             record: savedDoc,
             options: { forceSend: true, includeBadge: true },
           });
+
           if (result?.success) {
             console.log("[visitors] ✅ Ticket email sent to", savedDoc.email);
             await coll.updateOne(
               { _id: r.insertedId },
-              { $set: { ticket_email_sent_at: new Date() }, $unset: { email_failed: "", ticket_email_failed: "" } }
+              {
+                $set: { ticket_email_sent_at: new Date() },
+                $unset: { email_failed: "", ticket_email_failed: "" },
+              },
             );
           } else {
             console.error("[visitors] ❌ Ticket email failed");
             await coll.updateOne(
               { _id: r.insertedId },
-              { $set: { ticket_email_failed: true, ticket_email_failed_at: new Date() } }
+              {
+                $set: {
+                  ticket_email_failed: true,
+                  ticket_email_failed_at: new Date(),
+                },
+              },
             );
-          }
-        } else {
-          // Regular user → Send ACK email (ticket comes after payment)
-          const mail = buildVisitorAckEmail({ name: savedDoc.name });
-          try {
-            await mailer.sendMail({ to: savedDoc.email, subject: mail.subject, text: mail.text, html: mail.html, from: mail.from });
-            console.log("[visitors] ACK mail sent to", savedDoc.email);
-            await coll.updateOne(
-              { _id: r.insertedId },
-              { $unset: { email_failed: "", email_failed_at: "" }, $set: { email_sent_at: new Date() } }
-            );
-          } catch (e) {
-            console.error("[visitors] ACK mail failed:", e);
-            await coll.updateOne({ _id: r.insertedId }, { $set: { email_failed: true, email_failed_at: new Date() } });
           }
         }
-      } catch (e) { console.error("[visitors] background email error:", e); }
+      } catch (e) {
+        console.error("[visitors] background email error:", e);
+      }
     })();
 
     return;
   } catch (err) {
     console.error("[visitors] create error:", err);
-    return res.status(500).json({ success: false, error: "Failed to create visitor" });
+    return res
+      .status(500)
+      .json({ success: false, error: "Failed to create visitor" });
   }
 });
-
 /* ========== PUT /:id ========== */
 router.put("/:id", async (req, res) => {
   const db = await obtainDb();
-  if (!db) return res.status(500).json({ success: false, error: "DB not ready" });
+  if (!db)
+    return res.status(500).json({ success: false, error: "DB not ready" });
   const id = req.params.id;
   const oid = toObjectId(id);
-  if (!oid) return res.status(400).json({ success: false, error: "Invalid id" });
+  if (!oid)
+    return res.status(400).json({ success: false, error: "Invalid id" });
   try {
     const fields = { ...(req.body || {}) };
-    delete fields._id; delete fields.id;
-    if (Object.keys(fields).length === 0) return res.status(400).json({ success: false, error: "No fields to update" });
+    delete fields._id;
+    delete fields.id;
+    if (Object.keys(fields).length === 0)
+      return res
+        .status(400)
+        .json({ success: false, error: "No fields to update" });
     const update = { ...fields, updatedAt: new Date() };
     const coll = db.collection("visitors");
     const r = await coll.updateOne({ _id: oid }, { $set: update });
-    if (r.matchedCount === 0) return res.status(404).json({ success: false, error: "Visitor not found" });
+    if (r.matchedCount === 0)
+      return res
+        .status(404)
+        .json({ success: false, error: "Visitor not found" });
     const updated = await coll.findOne({ _id: oid });
     return res.json({ success: true, saved: updated });
   } catch (err) {
     console.error("[visitors] update error:", err && (err.stack || err));
-    return res.status(500).json({ success: false, error: "Failed to update visitor" });
+    return res
+      .status(500)
+      .json({ success: false, error: "Failed to update visitor" });
   }
 });
 
 /* ========== POST /:id/resend-email ========== */
 router.post("/:id/resend-email", async (req, res) => {
   const db = await obtainDb();
-  if (!db) return res.status(500).json({ success: false, error: "DB not ready" });
+  if (!db)
+    return res.status(500).json({ success: false, error: "DB not ready" });
   const oid = toObjectId(req.params.id);
-  if (!oid) return res.status(400).json({ success: false, error: "Invalid ID" });
+  if (!oid)
+    return res.status(400).json({ success: false, error: "Invalid ID" });
   const coll = db.collection("visitors");
   const doc = await coll.findOne({ _id: oid });
-  if (!doc) return res.status(404).json({ success: false, error: "Visitor not found" });
-  if (!isEmailLike(doc.email)) return res.status(400).json({ success: false, error: "Invalid email" });
+  if (!doc)
+    return res.status(404).json({ success: false, error: "Visitor not found" });
+  if (!isEmailLike(doc.email))
+    return res.status(400).json({ success: false, error: "Invalid email" });
   try {
     const result = await sendTicketEmail({ entity: "visitors", record: doc });
     if (result?.success) {
-      await coll.updateOne({ _id: oid }, { $set: { email_sent_at: new Date() }, $unset: { email_failed: "" } });
+      await coll.updateOne(
+        { _id: oid },
+        { $set: { email_sent_at: new Date() }, $unset: { email_failed: "" } },
+      );
       return res.json({ success: true });
     }
-    await coll.updateOne({ _id: oid }, { $set: { email_failed: true, email_failed_at: new Date() } });
-    return res.status(500).json({ success: false, error: result?.error || "Failed to send email" });
+    await coll.updateOne(
+      { _id: oid },
+      { $set: { email_failed: true, email_failed_at: new Date() } },
+    );
+    return res
+      .status(500)
+      .json({ success: false, error: result?.error || "Failed to send email" });
   } catch (err) {
     console.error("[visitors] resend mail error:", err);
-    await coll.updateOne({ _id: oid }, { $set: { email_failed: true, email_failed_at: new Date() } }).catch(() => {});
+    await coll
+      .updateOne(
+        { _id: oid },
+        { $set: { email_failed: true, email_failed_at: new Date() } },
+      )
+      .catch(() => {});
     return res.status(500).json({ success: false, error: "Mail send failed" });
   }
 });
@@ -302,19 +383,42 @@ router.post("/:id/resend-email", async (req, res) => {
 router.post("/:id/send-ticket", async (req, res) => {
   try {
     const db = await obtainDb();
-    if (!db) return res.status(500).json({ success: false, error: "database not available" });
+    if (!db)
+      return res
+        .status(500)
+        .json({ success: false, error: "database not available" });
     let oid;
-    try { oid = new ObjectId(req.params.id); } catch { return res.status(400).json({ success: false, error: "invalid id" }); }
+    try {
+      oid = new ObjectId(req.params.id);
+    } catch {
+      return res.status(400).json({ success: false, error: "invalid id" });
+    }
     const col = db.collection("visitors");
     const doc = await col.findOne({ _id: oid });
-    if (!doc) return res.status(404).json({ success: false, error: "Visitor not found" });
-    if (!isEmailLike(doc.email)) return res.status(400).json({ success: false, error: "No valid email" });
-    const result = await sendTicketEmail({ entity: "visitors", record: doc, options: { forceSend: true, includeBadge: true } });
+    if (!doc)
+      return res
+        .status(404)
+        .json({ success: false, error: "Visitor not found" });
+    if (!isEmailLike(doc.email))
+      return res.status(400).json({ success: false, error: "No valid email" });
+    const result = await sendTicketEmail({
+      entity: "visitors",
+      record: doc,
+      options: { forceSend: true, includeBadge: true },
+    });
     if (result?.success) {
-      await col.updateOne({ _id: oid }, { $set: { ticket_email_sent_at: new Date() }, $unset: { ticket_email_failed: "" } });
+      await col.updateOne(
+        { _id: oid },
+        {
+          $set: { ticket_email_sent_at: new Date() },
+          $unset: { ticket_email_failed: "" },
+        },
+      );
       return res.json({ success: true, mail: { ok: true } });
     }
-    return res.status(500).json({ success: false, error: "Failed to send ticket" });
+    return res
+      .status(500)
+      .json({ success: false, error: "Failed to send ticket" });
   } catch (e) {
     console.error("[visitors] send-ticket error:", e);
     return res.status(500).json({ success: false, error: e.message });
@@ -324,12 +428,17 @@ router.post("/:id/send-ticket", async (req, res) => {
 /* ========== DELETE /:id ========== */
 router.delete("/:id", async (req, res) => {
   const db = await obtainDb();
-  if (!db) return res.status(500).json({ success: false, error: "DB not ready" });
+  if (!db)
+    return res.status(500).json({ success: false, error: "DB not ready" });
   const id = req.params.id;
   try {
     let result = null;
-    if (ObjectId.isValid(id)) result = await db.collection("visitors").deleteOne({ _id: new ObjectId(id) });
-    if (!result || result.deletedCount === 0) result = await db.collection("visitors").deleteOne({ ticket_code: id });
+    if (ObjectId.isValid(id))
+      result = await db
+        .collection("visitors")
+        .deleteOne({ _id: new ObjectId(id) });
+    if (!result || result.deletedCount === 0)
+      result = await db.collection("visitors").deleteOne({ ticket_code: id });
     if (!result?.deletedCount) return res.status(404).json({ success: false });
     return res.json({ success: true });
   } catch (err) {
