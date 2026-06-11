@@ -120,8 +120,9 @@ router.post("/step", async (req, res) => {
  * POST /api/partners
  * Register partner (Mongo-backed)
  *
- * IMPORTANT: Default ACK email is sent in background ONLY if added_by_admin is false.
- * This is the "DEFAULT ACK EMAIL" (no ticket, no badge).
+ * NOTE: 
+ * - If created by admin (added_by_admin=true): sends TICKET email (badge + QR)
+ * - If created by user (added_by_admin=false): sends ACK email (under review)
  */
 
 router.post("/", async (req, res) => {
@@ -241,7 +242,7 @@ router.post("/", async (req, res) => {
       mail: { queued: true },
     });
 
-     scheduleDynamicReminder(db, "partners", insertedId).catch(e =>
+    scheduleDynamicReminder(db, "partners", insertedId).catch(e =>
       console.error("[partners] Reminder schedule failed:", e.message)
     );
 
@@ -260,7 +261,7 @@ router.post("/", async (req, res) => {
       }
     })();
 
-    // Background email
+    // Background email to partner - MODIFIED to send TICKET for admin-created
     (async () => {
       try {
         if (!insertedId) return;
@@ -268,37 +269,73 @@ router.post("/", async (req, res) => {
         if (!saved) return;
 
         console.log(`[DEBUG] Partner created with company: "${saved.company}"`);
+        console.log(`[DEBUG] Admin created: ${saved.added_by_admin}`);
 
         const to = saved.email || null;
         if (to && isEmailLike(to)) {
-          const mail = buildPartnerAckEmail({
-            name: saved.name,
-            company: saved.company,
-          });
-          try {
-            await mailer.sendMail({
-              to: saved.email,
-              subject: mail.subject,
-              text: mail.text,
-              html: mail.html,
-              from: mail.from,
+          
+          // ✅ If created by admin - send TICKET email directly (badge + QR)
+          if (saved.added_by_admin) {
+            try {
+              const result = await sendTicketEmail({
+                entity: "partners",
+                record: saved,
+                options: { forceSend: true, includeBadge: true },
+              });
+              
+              if (result?.success) {
+                console.log("[partners] ✅ Ticket email sent to admin-created partner:", saved.email);
+                await col.updateOne(
+                  { _id: r.insertedId },
+                  {
+                    $set: { ticket_email_sent_at: new Date() },
+                    $unset: { email_failed: "", ticket_email_failed: "" },
+                  },
+                );
+              } else {
+                console.error("[partners] ❌ Ticket email failed for admin-created partner");
+                await col.updateOne(
+                  { _id: r.insertedId },
+                  {
+                    $set: { ticket_email_failed: true, ticket_email_failed_at: new Date() },
+                  },
+                );
+              }
+            } catch (err) {
+              console.error("[partners] Ticket email error:", err);
+            }
+          } 
+          // ✅ For non-admin (user registrations) - send ACK email (under review)
+          else {
+            const mail = buildPartnerAckEmail({
+              name: saved.name,
+              company: saved.company,
             });
-            console.log("[partners] ack mail sent to", saved.email);
-            await col.updateOne(
-              { _id: r.insertedId },
-              {
-                $unset: { email_failed: "", email_failed_at: "" },
-                $set: { email_sent_at: new Date() },
-              },
-            );
-          } catch (e) {
-            console.error("[partners] ack mail failed:", e && (e.message || e));
-            await col.updateOne(
-              { _id: r.insertedId },
-              {
-                $set: { email_failed: true, email_failed_at: new Date() },
-              },
-            );
+            try {
+              await mailer.sendMail({
+                to: saved.email,
+                subject: mail.subject,
+                text: mail.text,
+                html: mail.html,
+                from: mail.from,
+              });
+              console.log("[partners] ack mail sent to", saved.email);
+              await col.updateOne(
+                { _id: r.insertedId },
+                {
+                  $unset: { email_failed: "", email_failed_at: "" },
+                  $set: { email_sent_at: new Date() },
+                },
+              );
+            } catch (e) {
+              console.error("[partners] ack mail failed:", e && (e.message || e));
+              await col.updateOne(
+                { _id: r.insertedId },
+                {
+                  $set: { email_failed: true, email_failed_at: new Date() },
+                },
+              );
+            }
           }
         }
       } catch (e) {
@@ -315,6 +352,7 @@ router.post("/", async (req, res) => {
     });
   }
 });
+
 /* ---------- Read / Update / Delete endpoints ---------- */
 
 /**
@@ -354,7 +392,7 @@ router.get("/", async (req, res) => {
 });
 
 /**
- * GET /api/partners/: id
+ * GET /api/partners/:id
  */
 router.get("/:id", async (req, res) => {
   try {

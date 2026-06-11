@@ -111,8 +111,9 @@ router.post("/step", async (req, res) => {
  * POST /api/exhibitors
  * Create exhibitor (MongoDB implementation)
  *
- * NOTE: Default ACK EMAIL is sent in background (no ticket, no badge) ALWAYS,
- * even if created by admin. Admin creation is tracked via added_by_admin flag.
+ * NOTE: 
+ * - If created by admin (added_by_admin=true): sends TICKET email (badge + QR)
+ * - If created by user (added_by_admin=false): sends ACK email (under review)
  */
 
 router.post("/", async (req, res) => {
@@ -140,7 +141,6 @@ router.post("/", async (req, res) => {
           .json({ success: false, error: "Valid email required" });
       }
 
-      // ✅ EXACT same pattern as visitors.js
       const isValid = await verifyOtpToken(
         db,
         "exhibitor",
@@ -210,9 +210,9 @@ router.post("/", async (req, res) => {
       address: "address",
     };
 
-    const doc = {}; // ✅ CREATE DOC FIRST
+    const doc = {};
 
-    // ✅ Map known fields
+    // Map known fields
     for (const [inputKey, docKey] of Object.entries(FIELD_MAP)) {
       const val =
         body[inputKey] !== undefined
@@ -226,11 +226,11 @@ router.post("/", async (req, res) => {
       }
     }
 
-    // ✅ Store company at root level
+    // Store company at root level
     doc.company = companyVal || "";
     if (otherVal) doc.other = otherVal;
 
-    // ✅ NOW add dynamic fields AFTER doc is populated
+    // Add dynamic fields
     for (const [key, value] of Object.entries(body)) {
       if (
         value !== undefined &&
@@ -280,10 +280,11 @@ router.post("/", async (req, res) => {
       mail: { queued: true },
     });
 
-    scheduleDynamicReminder(db, "exhibitors", insertedId).catch(e =>
-      console.error("[exhibitors] Reminder schedule failed:", e.message)
+    scheduleDynamicReminder(db, "exhibitors", insertedId).catch((e) =>
+      console.error("[exhibitors] Reminder schedule failed:", e.message),
     );
-    // ✅ Send notification to admin email with all fields
+
+    // Send notification to admin email
     (async () => {
       try {
         const allFields = JSON.stringify(doc, null, 2);
@@ -301,47 +302,78 @@ router.post("/", async (req, res) => {
       }
     })();
 
-    // Background email to exhibitor
+    // Background email to exhibitor - MODIFIED to send TICKET for admin-created
     (async () => {
       try {
         if (!insertedId) return;
         const saved = await col.findOne({ _id: toObjectId(insertedId) });
         if (!saved) return;
 
-        console.log(
-          `[DEBUG] Exhibitor created with company: "${saved.company}"`,
-        );
+        console.log(`[DEBUG] Exhibitor created with company: "${saved.company}"`);
+        console.log(`[DEBUG] Admin created: ${saved.added_by_admin}`);
 
         const to = saved.email || body.email || null;
         if (to && isEmailLike(to)) {
-          const mail = buildExhibitorAckEmail({ name: saved.name });
-          try {
-            await mailer.sendMail({
-              to: saved.email,
-              subject: mail.subject,
-              text: mail.text,
-              html: mail.html,
-              from: mail.from,
-            });
-            console.log("[exhibitors] ack mail sent to", saved.email);
-            await col.updateOne(
-              { _id: toObjectId(insertedId) },
-              {
-                $unset: { email_failed: "", email_failed_at: "" },
-                $set: { email_sent_at: new Date() },
-              },
-            );
-          } catch (e) {
-            console.error(
-              "[exhibitors] ack mail failed:",
-              e && (e.message || e),
-            );
-            await col.updateOne(
-              { _id: toObjectId(insertedId) },
-              {
-                $set: { email_failed: true, email_failed_at: new Date() },
-              },
-            );
+          
+          // ✅ If created by admin - send TICKET email directly (badge + QR)
+          if (saved.added_by_admin) {
+            try {
+              const result = await sendTicketEmail({
+                entity: "exhibitors",
+                record: saved,
+                options: { forceSend: true, includeBadge: true },
+              });
+              
+              if (result?.success) {
+                console.log("[exhibitors] ✅ Ticket email sent to admin-created exhibitor:", saved.email);
+                await col.updateOne(
+                  { _id: toObjectId(insertedId) },
+                  {
+                    $set: { ticket_email_sent_at: new Date() },
+                    $unset: { email_failed: "", ticket_email_failed: "" },
+                  },
+                );
+              } else {
+                console.error("[exhibitors] ❌ Ticket email failed for admin-created exhibitor");
+                await col.updateOne(
+                  { _id: toObjectId(insertedId) },
+                  {
+                    $set: { ticket_email_failed: true, ticket_email_failed_at: new Date() },
+                  },
+                );
+              }
+            } catch (err) {
+              console.error("[exhibitors] Ticket email error:", err);
+            }
+          } 
+          // ✅ For non-admin (user registrations) - send ACK email (under review)
+          else {
+            const mail = buildExhibitorAckEmail({ name: saved.name });
+            try {
+              await mailer.sendMail({
+                to: saved.email,
+                subject: mail.subject,
+                text: mail.text,
+                html: mail.html,
+                from: mail.from,
+              });
+              console.log("[exhibitors] ack mail sent to", saved.email);
+              await col.updateOne(
+                { _id: toObjectId(insertedId) },
+                {
+                  $unset: { email_failed: "", email_failed_at: "" },
+                  $set: { email_sent_at: new Date() },
+                },
+              );
+            } catch (e) {
+              console.error("[exhibitors] ack mail failed:", e && (e.message || e));
+              await col.updateOne(
+                { _id: toObjectId(insertedId) },
+                {
+                  $set: { email_failed: true, email_failed_at: new Date() },
+                },
+              );
+            }
           }
         }
       } catch (e) {
@@ -357,8 +389,9 @@ router.post("/", async (req, res) => {
       .json({ success: false, error: "Server error registering exhibitor" });
   }
 });
+
 /**
- * POST /api/exhibitors/: id/resend-email
+ * POST /api/exhibitors/:id/resend-email
  *
  * THIS ENDPOINT MUST ONLY SEND THE TICKET EMAIL (badge, QR, etc).
  * It delegates to utils/sendTicketEmail so template and badge are centralized.
@@ -611,7 +644,7 @@ router.delete("/:id", async (req, res) => {
 /* ---------- Approve / Cancel (status emails only) ---------- */
 
 /**
- * POST /api/exhibitors/: id/approve
+ * POST /api/exhibitors/:id/approve
  */
 router.post("/:id/approve", async (req, res) => {
   const id = req.params.id;
@@ -729,7 +762,7 @@ support@railtransexpo.com`,
 });
 
 /**
- * POST /api/exhibitors/: id/cancel
+ * POST /api/exhibitors/:id/cancel
  */
 router.post("/:id/cancel", async (req, res) => {
   const id = req.params.id;
@@ -780,7 +813,7 @@ router.post("/:id/cancel", async (req, res) => {
             subject: `Your exhibitor registration has been cancelled — RailTrans Expo`,
             text: `Hello ${name},
 
-Your exhibitor registration (ID: ${copy.id}) has been cancelled. If you believe this is an error, contact support@railtransexpo. com.
+Your exhibitor registration (ID: ${copy.id}) has been cancelled. If you believe this is an error, contact support@railtransexpo.com.
 
 Regards,
 RailTrans Expo Team`,
