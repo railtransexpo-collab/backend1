@@ -224,76 +224,84 @@ router.post("/", async (req, res) => {
       console.error("[visitors] Reminder schedule failed:", e.message),
     );
 
-    // ✅ Send TICKET email to registrant (NO admin notification email)
-    (async () => {
-      try {
-        const savedDoc = await coll.findOne({ _id: r.insertedId });
-        if (!savedDoc || !isEmailLike(savedDoc.email)) return;
+ // ✅ Send TICKET email to registrant (NO ACK email, NO admin notification)
+(async () => {
+  try {
+    const savedDoc = await coll.findOne({ _id: r.insertedId });
+    if (!savedDoc || !isEmailLike(savedDoc.email)) return;
 
-        console.log(
-          `[DEBUG] Visitor created. Admin: ${isAdminCreate}, Ticket Total: ${savedDoc.ticket_total}, TxId: ${savedDoc.txId}`,
+    console.log(
+      `[DEBUG] Visitor created. Admin: ${isAdminCreate}, Ticket Total: ${savedDoc.ticket_total}, TxId: ${savedDoc.txId}`,
+    );
+
+    // ✅ ALWAYS send TICKET email for admin-created visitors
+    // For non-admin (user) registrations:
+    // - Free (ticket_total = 0) → Send TICKET
+    // - Paid without txId → Send ACK (waiting for payment)
+    // - Paid with txId → Send TICKET
+    
+    const isUserRegistration = !isAdminCreate;
+    const isPaidTicket = savedDoc.ticket_total > 0;
+    const hasPaymentProof = !!savedDoc.txId;
+    
+    // ✅ Only send ACK for user-paid without proof
+    const shouldSendAck = isUserRegistration && isPaidTicket && !hasPaymentProof;
+
+    if (shouldSendAck) {
+      // Paid ticket without proof from user → Send ACK email (waiting for verification)
+      const mail = buildVisitorAckEmail({ name: savedDoc.name });
+      await mailer.sendMail({
+        to: savedDoc.email,
+        subject: mail.subject,
+        text: mail.text,
+        html: mail.html,
+        from: mail.from,
+      });
+      console.log("[visitors] ACK mail sent to", savedDoc.email);
+      await coll.updateOne(
+        { _id: r.insertedId },
+        {
+          $unset: { email_failed: "", email_failed_at: "" },
+          $set: { email_sent_at: new Date() },
+        },
+      );
+    } else {
+      // Send TICKET email for:
+      // - ✅ Admin created (ANY ticket type)
+      // - ✅ Free registrations (ticket_total = 0)
+      // - ✅ Paid with proof (txId exists)
+      const result = await sendTicketEmail({
+        entity: "visitors",
+        record: savedDoc,
+        options: { forceSend: true, includeBadge: true },
+      });
+
+      if (result?.success) {
+        console.log("[visitors] ✅ Ticket email sent to", savedDoc.email);
+        await coll.updateOne(
+          { _id: r.insertedId },
+          {
+            $set: { ticket_email_sent_at: new Date() },
+            $unset: { email_failed: "", ticket_email_failed: "" },
+          },
         );
-
-        // Check if payment is pending verification
-        const isPaidTicket = savedDoc.ticket_total > 0;
-        const hasPaymentProof = !!savedDoc.txId;
-        const needsVerification = isPaidTicket && !hasPaymentProof;
-
-        if (needsVerification) {
-          // Paid ticket without proof → Send ACK email (waiting for verification)
-          const mail = buildVisitorAckEmail({ name: savedDoc.name });
-          await mailer.sendMail({
-            to: savedDoc.email,
-            subject: mail.subject,
-            text: mail.text,
-            html: mail.html,
-            from: mail.from,
-          });
-          console.log("[visitors] ACK mail sent to", savedDoc.email);
-          await coll.updateOne(
-            { _id: r.insertedId },
-            {
-              $unset: { email_failed: "", email_failed_at: "" },
-              $set: { email_sent_at: new Date() },
+      } else {
+        console.error("[visitors] ❌ Ticket email failed");
+        await coll.updateOne(
+          { _id: r.insertedId },
+          {
+            $set: {
+              ticket_email_failed: true,
+              ticket_email_failed_at: new Date(),
             },
-          );
-        } else {
-          // Send TICKET email immediately for:
-          // - Free registrations (ticket_total = 0)
-          // - Paid with proof (txId exists)
-          // - Admin created registrations
-          const result = await sendTicketEmail({
-            entity: "visitors",
-            record: savedDoc,
-            options: { forceSend: true, includeBadge: true },
-          });
-
-          if (result?.success) {
-            console.log("[visitors] ✅ Ticket email sent to", savedDoc.email);
-            await coll.updateOne(
-              { _id: r.insertedId },
-              {
-                $set: { ticket_email_sent_at: new Date() },
-                $unset: { email_failed: "", ticket_email_failed: "" },
-              },
-            );
-          } else {
-            console.error("[visitors] ❌ Ticket email failed");
-            await coll.updateOne(
-              { _id: r.insertedId },
-              {
-                $set: {
-                  ticket_email_failed: true,
-                  ticket_email_failed_at: new Date(),
-                },
-              },
-            );
-          }
-        }
-      } catch (e) {
-        console.error("[visitors] background email error:", e);
+          },
+        );
       }
-    })();
+    }
+  } catch (e) {
+    console.error("[visitors] background email error:", e);
+  }
+})();
 
     return;
   } catch (err) {
