@@ -224,7 +224,7 @@ router.post("/", async (req, res) => {
       console.error("[visitors] Reminder schedule failed:", e.message),
     );
 
- // ✅ Send TICKET email to registrant (NO ACK email, NO admin notification)
+// ✅ Send TICKET email to registrant (NO ACK email, NO admin notification)
 (async () => {
   try {
     const savedDoc = await coll.findOne({ _id: r.insertedId });
@@ -234,17 +234,14 @@ router.post("/", async (req, res) => {
       `[DEBUG] Visitor created. Admin: ${isAdminCreate}, Ticket Total: ${savedDoc.ticket_total}, TxId: ${savedDoc.txId}`,
     );
 
-    // ✅ ALWAYS send TICKET email for admin-created visitors
-    // For non-admin (user) registrations:
-    // - Free (ticket_total = 0) → Send TICKET
-    // - Paid without txId → Send ACK (waiting for payment)
-    // - Paid with txId → Send TICKET
-    
     const isUserRegistration = !isAdminCreate;
     const isPaidTicket = savedDoc.ticket_total > 0;
     const hasPaymentProof = !!savedDoc.txId;
     
-    // ✅ Only send ACK for user-paid without proof
+    // ✅ Agar ticket_total 0 hai (100% discount ya free ticket) toh TICKET bhejo
+    // ✅ Agar admin ne banaya hai toh TICKET bhejo
+    // ✅ Agar payment proof hai toh TICKET bhejo
+    // ✅ ONLY ACK tab bhejo jab: user ne banaya ho, paid ticket ho, aur payment proof na ho
     const shouldSendAck = isUserRegistration && isPaidTicket && !hasPaymentProof;
 
     if (shouldSendAck) {
@@ -266,10 +263,10 @@ router.post("/", async (req, res) => {
         },
       );
     } else {
-      // Send TICKET email for:
-      // - ✅ Admin created (ANY ticket type)
-      // - ✅ Free registrations (ticket_total = 0)
-      // - ✅ Paid with proof (txId exists)
+      // ✅ TICKET bhejo for:
+      // - Free tickets (ticket_total = 0, includes 100% discount coupon)
+      // - Paid with proof (txId exists)
+      // - Admin created
       const result = await sendTicketEmail({
         entity: "visitors",
         record: savedDoc,
