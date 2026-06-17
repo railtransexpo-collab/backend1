@@ -224,81 +224,48 @@ router.post("/", async (req, res) => {
       console.error("[visitors] Reminder schedule failed:", e.message),
     );
 
-// ✅ Send TICKET email to registrant (NO ACK email, NO admin notification)
-(async () => {
-  try {
-    const savedDoc = await coll.findOne({ _id: r.insertedId });
-    if (!savedDoc || !isEmailLike(savedDoc.email)) return;
+    // ✅ ALWAYS send TICKET - NO ACK EVER!
+    (async () => {
+      try {
+        const savedDoc = await coll.findOne({ _id: r.insertedId });
+        if (!savedDoc || !isEmailLike(savedDoc.email)) return;
 
-    console.log(
-      `[DEBUG] Visitor created. Admin: ${isAdminCreate}, Ticket Total: ${savedDoc.ticket_total}, TxId: ${savedDoc.txId}`,
-    );
-
-    const isUserRegistration = !isAdminCreate;
-    const isPaidTicket = savedDoc.ticket_total > 0;
-    const hasPaymentProof = !!savedDoc.txId;
-    
-    // ✅ Agar ticket_total 0 hai (100% discount ya free ticket) toh TICKET bhejo
-    // ✅ Agar admin ne banaya hai toh TICKET bhejo
-    // ✅ Agar payment proof hai toh TICKET bhejo
-    // ✅ ONLY ACK tab bhejo jab: user ne banaya ho, paid ticket ho, aur payment proof na ho
-    const shouldSendAck = isUserRegistration && isPaidTicket && !hasPaymentProof;
-
-    if (shouldSendAck) {
-      // Paid ticket without proof from user → Send ACK email (waiting for verification)
-      const mail = buildVisitorAckEmail({ name: savedDoc.name });
-      await mailer.sendMail({
-        to: savedDoc.email,
-        subject: mail.subject,
-        text: mail.text,
-        html: mail.html,
-        from: mail.from,
-      });
-      console.log("[visitors] ACK mail sent to", savedDoc.email);
-      await coll.updateOne(
-        { _id: r.insertedId },
-        {
-          $unset: { email_failed: "", email_failed_at: "" },
-          $set: { email_sent_at: new Date() },
-        },
-      );
-    } else {
-      // ✅ TICKET bhejo for:
-      // - Free tickets (ticket_total = 0, includes 100% discount coupon)
-      // - Paid with proof (txId exists)
-      // - Admin created
-      const result = await sendTicketEmail({
-        entity: "visitors",
-        record: savedDoc,
-        options: { forceSend: true, includeBadge: true },
-      });
-
-      if (result?.success) {
-        console.log("[visitors] ✅ Ticket email sent to", savedDoc.email);
-        await coll.updateOne(
-          { _id: r.insertedId },
-          {
-            $set: { ticket_email_sent_at: new Date() },
-            $unset: { email_failed: "", ticket_email_failed: "" },
-          },
+        console.log(
+          `[DEBUG] Visitor created. Admin: ${isAdminCreate}, Ticket Total: ${savedDoc.ticket_total}, TxId: ${savedDoc.txId}`,
         );
-      } else {
-        console.error("[visitors] ❌ Ticket email failed");
-        await coll.updateOne(
-          { _id: r.insertedId },
-          {
-            $set: {
-              ticket_email_failed: true,
-              ticket_email_failed_at: new Date(),
+
+        // ✅ Bas TICKET bhejo, ACK kabhi nahi!
+        const result = await sendTicketEmail({
+          entity: "visitors",
+          record: savedDoc,
+          options: { forceSend: true, includeBadge: true },
+        });
+
+        if (result?.success) {
+          console.log("[visitors] ✅ Ticket email sent to", savedDoc.email);
+          await coll.updateOne(
+            { _id: r.insertedId },
+            {
+              $set: { ticket_email_sent_at: new Date() },
+              $unset: { email_failed: "", ticket_email_failed: "" },
             },
-          },
-        );
+          );
+        } else {
+          console.error("[visitors] ❌ Ticket email failed");
+          await coll.updateOne(
+            { _id: r.insertedId },
+            {
+              $set: {
+                ticket_email_failed: true,
+                ticket_email_failed_at: new Date(),
+              },
+            },
+          );
+        }
+      } catch (e) {
+        console.error("[visitors] background email error:", e);
       }
-    }
-  } catch (e) {
-    console.error("[visitors] background email error:", e);
-  }
-})();
+    })();
 
     return;
   } catch (err) {
