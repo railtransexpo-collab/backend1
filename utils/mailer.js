@@ -7,10 +7,14 @@ const {
   SMTP_USER,
   SMTP_PASS,
   SMTP_SERVICE,
+  SMTP_SECURE,
   MAIL_FROM = "support@railtransexpo.com",
   MAIL_FROM_NAME = "RailTrans Expo",
-  MAIL_REPLYTO = ""
+  MAIL_REPLYTO = "",
+  ZEPTO_API_TOKEN,
+  ZEPTO_API_URL = "https://api.zeptomail.in/v1.1/email"
 } = process.env;
+const axios = require('axios');
 
 /* --- helper: obtain DB (supports mongo.getDb() async or mongo.db sync) --- */
 async function obtainDb() {
@@ -61,7 +65,7 @@ function parseMailFrom(envFrom, envName) {
 function buildTransporter() {
   if (SMTP_HOST) {
     const port = Number(SMTP_PORT || 587);
-    const secure = port === 465;
+    const secure = (String(SMTP_SECURE || '').toLowerCase() === 'true' || String(SMTP_SECURE || '') === '1') ? true : (port === 465);
     return nodemailer.createTransport({
       host: SMTP_HOST,
       port,
@@ -93,12 +97,89 @@ const FROM_INFO = parseMailFrom(MAIL_FROM, MAIL_FROM_NAME);
  */
 async function verifyTransport() {
   try {
+    // If ZeptoMail API token is present, verify API reachability and token
+    if (ZEPTO_API_TOKEN) {
+      try {
+        const resp = await axios.get(ZEPTO_API_URL, {
+          headers: { Authorization: `Zoho-oauthtoken ${ZEPTO_API_TOKEN}` },
+          timeout: 5000,
+        });
+        // If we get a response that isn't 401, consider API reachable.
+        console.log('[mailer] ZeptoMail API reachable', resp && resp.status);
+        return { ok: true, info: { status: resp.status } };
+      } catch (err) {
+        // If the server replies 401 Unauthorized, token is invalid
+        if (err && err.response && err.response.status === 401) {
+          console.error('[mailer] ZeptoMail API token rejected');
+          return { ok: false, error: 'ZeptoMail API token rejected (401)' };
+        }
+        console.error('[mailer] ZeptoMail API verify failed:', err && (err.stack || err));
+        return { ok: false, error: String(err && err.message ? err.message : err) };
+      }
+    }
+
     const ok = await transporter.verify();
     console.log("[mailer] SMTP verify success:", ok);
     return { ok: true, info: ok };
   } catch (err) {
     console.error("[mailer] SMTP verify failed:", err && (err.stack || err));
     return { ok: false, error: String(err && err.message ? err.message : err) };
+  }
+}
+
+/**
+ * Send email via ZeptoMail API using axios.
+ * Returns an object similar to SMTP send result: { success: boolean, info?, error? }
+ */
+async function sendViaZeptoApi(logEntry, message) {
+  const payload = {
+    from: { address: FROM_INFO.email, name: FROM_INFO.name || 'no-reply' },
+    to: [],
+    subject: message.subject || '(no subject)',
+    htmlbody: message.html || message.text || '',
+    textbody: message.text || undefined,
+  };
+
+  const tos = Array.isArray(message.to) ? message.to : (typeof message.to === 'string' ? [message.to] : []);
+  for (const t of tos) {
+    // try to preserve a name if the recipient is in `Name <email>` format
+    let addr = t;
+    let name = undefined;
+    const m = String(t).match(/^(.*)<\s*([^>]+)\s*>$/);
+    if (m) { name = m[1].trim().replace(/^"|"$/g, ''); addr = m[2].trim(); }
+    payload.to.push({ email_address: { address: addr, name: name || '' } });
+  }
+
+  try {
+    const resp = await axios.post(ZEPTO_API_URL, payload, {
+      headers: { Authorization: `Zoho-oauthtoken ${ZEPTO_API_TOKEN}`, 'Content-Type': 'application/json' },
+      timeout: 10000,
+    });
+
+    // ZeptoMail returns a body; include it in result for debugging
+    const info = { status: resp.status, data: resp.data };
+    // update DB log entry if possible
+    try {
+      if (logEntry && logEntry._id) {
+        const db = await obtainDb();
+        if (db) await db.collection('mail_logs').updateOne({ _id: logEntry._id }, { $set: { status: 'sent', sendResult: info, updatedAt: new Date() } });
+      }
+    } catch (e) {
+      console.warn('[mailer] failed to update mail_logs after zepto send:', e && (e.message || e));
+    }
+
+    return { success: true, info };
+  } catch (err) {
+    const errMsg = String(err && (err.response && err.response.data ? JSON.stringify(err.response.data) : (err.message || err)));
+    try {
+      if (logEntry && logEntry._id) {
+        const db = await obtainDb();
+        if (db) await db.collection('mail_logs').updateOne({ _id: logEntry._id }, { $set: { status: 'failed', sendResult: { error: errMsg }, updatedAt: new Date() } });
+      }
+    } catch (e) {
+      console.warn('[mailer] failed to update mail_logs after zepto error:', e && (e.message || e));
+    }
+    return { success: false, error: errMsg };
   }
 }
 
@@ -198,6 +279,20 @@ async function sendMail(opts = {}) {
 
   // Attempt to send
   try {
+    // If ZeptoMail API token is provided, use API to send instead of SMTP
+    if (ZEPTO_API_TOKEN) {
+      const apiRes = await sendViaZeptoApi(logEntry, message);
+      if (apiRes && apiRes.success) return { success: true, info: apiRes.info, dbRecordId: logEntry._id || null };
+      const errText = apiRes && apiRes.error ? String(apiRes.error) : '';
+      // If API token rejected or access denied, fall back to SMTP automatically
+      if (/401|Invalid API Token|Access Denied|TM_4001|SERR_157/i.test(errText)) {
+        console.warn('[mailer] ZeptoMail API failed, falling back to SMTP:', errText);
+        // continue to SMTP send below
+      } else {
+        return { success: false, error: apiRes && apiRes.error, dbRecordId: logEntry._id || null };
+      }
+    }
+
     const info = await transporter.sendMail(message);
     const resultInfo = { accepted: info.accepted || [], rejected: info.rejected || [], response: info.response, messageId: info.messageId };
     // update DB log
