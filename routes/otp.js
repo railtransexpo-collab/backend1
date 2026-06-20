@@ -279,6 +279,7 @@ router.get("/check-email", async (req, res) => {
     });
   }
 });
+
 /* ---------- POST /api/otp/send ---------- */
 router.post("/send", express.json({ limit: "2mb" }), async (req, res) => {
   try {
@@ -366,17 +367,14 @@ router.post("/send", express.json({ limit: "2mb" }), async (req, res) => {
   </body>
 </html>`;
 
-    // ✅ FIX: Use ONLY the email address, no display name
-    const from = "support@railtransexpo.com";
-    
-    console.log(`[otp/send] Sending OTP to: ${value}, from: ${from}`);
-    
+    // send email (may be jsonTransport in dev)
+    const from = process.env.MAIL_FROM || process.env.SMTP_USER || "no-reply@railtransexpo.com";
     try {
-      await transporter.sendMail({ from: from, to: value, subject, text, html });
+      await transporter.sendMail({ from, to: value, subject, text, html });
     } catch (mailErr) {
       console.error("[otp/send] mail send failed:", mailErr && (mailErr.stack || mailErr.message || mailErr));
       otpStore.delete(key);
-      return res.status(500).json({ success: false, error: "Failed to send OTP. Please try again." });
+      return res.status(500).json({ success: false, error: "Failed to send OTP" });
     }
 
     return res.json({
@@ -391,6 +389,7 @@ router.post("/send", express.json({ limit: "2mb" }), async (req, res) => {
     return res.status(500).json({ success: false, error: "Server error" });
   }
 });
+
 /* ---------- POST /api/otp/verify ---------- */
 router.post("/verify", express.json({ limit: "2mb" }), async (req, res) => {
   try {
