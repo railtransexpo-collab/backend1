@@ -279,7 +279,6 @@ router.get("/check-email", async (req, res) => {
     });
   }
 });
-
 /* ---------- POST /api/otp/send ---------- */
 router.post("/send", express.json({ limit: "2mb" }), async (req, res) => {
   try {
@@ -367,8 +366,8 @@ router.post("/send", express.json({ limit: "2mb" }), async (req, res) => {
   </body>
 </html>`;
 
-    // ✅ FIX: Use MAIL_FROM directly, NOT SMTP_USER (which is 'emailapikey' for ZeptoMail)
-    const from = process.env.MAIL_FROM || "support@railtransexpo.com";
+    // ✅ FIX: Use ONLY the email address, no display name
+    const from = "support@railtransexpo.com";
     
     console.log(`[otp/send] Sending OTP to: ${value}, from: ${from}`);
     
