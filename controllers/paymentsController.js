@@ -104,16 +104,14 @@ exports.createOrder = async (req, res) => {
       console.warn("[DB] save payment failed:", dbErr.message);
     }
 
-    // Build checkout URL for frontend
-    const checkoutUrl = `https://checkout.razorpay.com/v1/payment?order_id=${order.id}&key_id=${process.env.RAZORPAY_KEY_ID}`;
-
+    
     return res.json({
       success: true,
       key: process.env.RAZORPAY_KEY_ID,
       orderId: order.id,
       amount: order.amount,
       currency: order.currency,
-      checkoutUrl: checkoutUrl,
+     
     });
   } catch (err) {
     console.error("createOrder error:", err);
