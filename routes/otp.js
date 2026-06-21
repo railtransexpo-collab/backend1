@@ -13,7 +13,9 @@
  *
  * NOTE: This file assumes a mongoClient util (getDb()/db) and nodemailer installed.
  */
-const { storeOtpToken } = require('../utils/otpStore');
+const { sendMail } = require("../utils/mailer");
+
+const { storeOtpToken } = require("../utils/otpStore");
 const express = require("express");
 const nodemailer = require("nodemailer");
 const mongoClient = require("../utils/mongoClient"); // uses getDb() or .db
@@ -29,7 +31,7 @@ async function obtainDbWithRetry() {
     try {
       const db = await obtainDb();
       if (db) return db;
-      await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+      await new Promise((resolve) => setTimeout(resolve, 1000 * (i + 1)));
     } catch (err) {
       console.warn(`[otp] DB connection attempt ${i + 1} failed:`, err.message);
       if (i === MAX_RETRIES - 1) throw err;
@@ -78,7 +80,11 @@ function buildTransporter() {
 const transporter = buildTransporter();
 if (transporter && transporter.verify) {
   transporter.verify((err) => {
-    if (err) console.warn("[mailer] verify failed:", err && err.message ? err.message : err);
+    if (err)
+      console.warn(
+        "[mailer] verify failed:",
+        err && err.message ? err.message : err,
+      );
     else console.log("[mailer] transporter ready");
   });
 }
@@ -88,7 +94,9 @@ function isValidEmail(addr = "") {
   return typeof addr === "string" && /\S+@\S+\.\S+/.test(addr);
 }
 function normalizeEmail(e = "") {
-  return String(e || "").trim().toLowerCase();
+  return String(e || "")
+    .trim()
+    .toLowerCase();
 }
 function escapeRegex(s = "") {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -100,10 +108,14 @@ const RESEND_COOLDOWN_MS = 60 * 1000; // 1 minute between sends per key
 const MAX_VERIFY_ATTEMPTS = 5;
 const otpStore = new Map(); // key = `${role}::${email}`
 
-setInterval(() => {
-  const now = Date.now();
-  for (const [k, r] of otpStore.entries()) if (!r || r.expires < now) otpStore.delete(k);
-}, 10 * 60 * 1000).unref();
+setInterval(
+  () => {
+    const now = Date.now();
+    for (const [k, r] of otpStore.entries())
+      if (!r || r.expires < now) otpStore.delete(k);
+  },
+  10 * 60 * 1000,
+).unref();
 
 function genOtp() {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -129,7 +141,13 @@ function roleToCollection(role) {
   if (!role) return null;
   return `${role}s`; // e.g. visitor -> visitors
 }
-const KNOWN_COLLECTIONS = ["visitors", "exhibitors", "partners", "speakers", "awardees"];
+const KNOWN_COLLECTIONS = [
+  "visitors",
+  "exhibitors",
+  "partners",
+  "speakers",
+  "awardees",
+];
 
 /* ---------- Mongo lookup (updated) ----------
    Behavior:
@@ -143,7 +161,7 @@ async function findExistingByEmailMongo(emailRaw, registrationType) {
       console.warn("[otp] No database connection, returning null");
       return null;
     }
-    
+
     const emailNorm = normalizeEmail(emailRaw);
     if (!emailNorm) return null;
 
@@ -160,10 +178,18 @@ async function findExistingByEmailMongo(emailRaw, registrationType) {
     collectionsToTry = Array.from(new Set(collectionsToTry.filter(Boolean)));
 
     const regex = new RegExp(`^\\s*${escapeRegex(emailNorm)}\\s*$`, "i");
-    const candidatePaths = ["email", "data.email", "form.email", "data.emailAddress", "data.contactEmail"];
+    const candidatePaths = [
+      "email",
+      "data.email",
+      "form.email",
+      "data.emailAddress",
+      "data.contactEmail",
+    ];
 
     if (process.env.DEBUG_FIND_EMAIL === "true") {
-      console.debug(`[otp] findExistingByEmailMongo: trying collections: ${collectionsToTry.join(", ")}`);
+      console.debug(
+        `[otp] findExistingByEmailMongo: trying collections: ${collectionsToTry.join(", ")}`,
+      );
     }
 
     for (const colName of collectionsToTry) {
@@ -171,20 +197,30 @@ async function findExistingByEmailMongo(emailRaw, registrationType) {
       try {
         const coll = db.collection(colName);
         const q = {
-          $or: candidatePaths.map(p => {
+          $or: candidatePaths.map((p) => {
             const obj = {};
             obj[p] = { $regex: regex };
             return obj;
-          })
+          }),
         };
         if (colName === "registrants" && role) q.role = role;
 
-        const projection = { _id: 1, ticket_code: 1, name: 1, company: 1, mobile: 1, email: 1, data: 1, form: 1, role: 1 };
-        const doc = await coll.findOne(q, { projection }).catch(err => {
+        const projection = {
+          _id: 1,
+          ticket_code: 1,
+          name: 1,
+          company: 1,
+          mobile: 1,
+          email: 1,
+          data: 1,
+          form: 1,
+          role: 1,
+        };
+        const doc = await coll.findOne(q, { projection }).catch((err) => {
           console.warn(`[otp] Query failed on ${colName}:`, err.message);
           return null;
         });
-        
+
         if (!doc) continue;
 
         let matchedPath = null;
@@ -193,19 +229,35 @@ async function findExistingByEmailMongo(emailRaw, registrationType) {
           const parts = p.split(".");
           let v = doc;
           for (const part of parts) {
-            if (v && typeof v === "object" && Object.prototype.hasOwnProperty.call(v, part)) v = v[part];
-            else { v = undefined; break; }
+            if (
+              v &&
+              typeof v === "object" &&
+              Object.prototype.hasOwnProperty.call(v, part)
+            )
+              v = v[part];
+            else {
+              v = undefined;
+              break;
+            }
           }
-          if (typeof v === "string" && v.trim() && normalizeEmail(v) === emailNorm) {
+          if (
+            typeof v === "string" &&
+            v.trim() &&
+            normalizeEmail(v) === emailNorm
+          ) {
             matchedPath = p;
             emailValue = v.trim();
             break;
           }
         }
         if (!matchedPath) {
-          if (doc.email) { matchedPath = "email"; emailValue = String(doc.email).trim(); }
-          else if (doc.data && doc.data.email) { matchedPath = "data.email"; emailValue = String(doc.data.email).trim(); }
-          else emailValue = emailNorm;
+          if (doc.email) {
+            matchedPath = "email";
+            emailValue = String(doc.email).trim();
+          } else if (doc.data && doc.data.email) {
+            matchedPath = "data.email";
+            emailValue = String(doc.data.email).trim();
+          } else emailValue = emailNorm;
         }
 
         return {
@@ -219,13 +271,19 @@ async function findExistingByEmailMongo(emailRaw, registrationType) {
           role: doc.role || role || null,
         };
       } catch (e) {
-        console.warn(`[otp] findExistingByEmailMongo: collection ${colName} check failed:`, e && e.message ? e.message : e);
+        console.warn(
+          `[otp] findExistingByEmailMongo: collection ${colName} check failed:`,
+          e && e.message ? e.message : e,
+        );
         continue;
       }
     }
     return null;
   } catch (err) {
-    console.error("[otp] findExistingByEmailMongo error:", err && (err.stack || err.message || err));
+    console.error(
+      "[otp] findExistingByEmailMongo error:",
+      err && (err.stack || err.message || err),
+    );
     // Return null instead of throwing - allow registration to proceed
     return null;
   }
@@ -236,25 +294,29 @@ router.get("/check-email", async (req, res) => {
     // Set timeout for the entire request
     req.setTimeout(10000); // 10 second timeout
     res.setTimeout(10000);
-    
+
     const email = normalizeEmail(req.query.email || "");
     const registrationType = String(req.query.type || "").trim();
 
-    console.log(`[otp/check-email] Request: email=${email}, type=${registrationType}`);
+    console.log(
+      `[otp/check-email] Request: email=${email}, type=${registrationType}`,
+    );
 
     if (!isValidEmail(email)) {
       console.log(`[otp/check-email] Invalid email: ${email}`);
       return res.status(400).json({ success: false, error: "invalid email" });
     }
-    
+
     if (!registrationType) {
       console.log(`[otp/check-email] Missing registrationType`);
-      return res.status(400).json({ success: false, error: "missing registrationType" });
+      return res
+        .status(400)
+        .json({ success: false, error: "missing registrationType" });
     }
 
     // Add a timeout promise wrapper
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Database query timeout')), 8000);
+      setTimeout(() => reject(new Error("Database query timeout")), 8000);
     });
 
     const findPromise = findExistingByEmailMongo(email, registrationType);
@@ -264,18 +326,20 @@ router.get("/check-email", async (req, res) => {
       console.log(`[otp/check-email] Email found: ${email}`);
       return res.json({ success: true, found: true, info });
     }
-    
+
     console.log(`[otp/check-email] Email not found: ${email}`);
     return res.json({ success: true, found: false });
-    
   } catch (err) {
-    console.error("[otp/check-email] error:", err && (err.stack || err.message || err));
+    console.error(
+      "[otp/check-email] error:",
+      err && (err.stack || err.message || err),
+    );
     // Don't return 500 - return a graceful error that frontend can handle
-    return res.status(200).json({ 
-      success: false, 
-      found: false, 
+    return res.status(200).json({
+      success: false,
+      found: false,
       error: "Service temporarily unavailable, please try again",
-      fallback: true 
+      fallback: true,
     });
   }
 });
@@ -284,13 +348,22 @@ router.get("/check-email", async (req, res) => {
 router.post("/send", express.json({ limit: "2mb" }), async (req, res) => {
   try {
     const { value, registrationType } = req.body || {};
-    if (!isValidEmail(value)) return res.status(400).json({ success: false, error: "Provide a valid email" });
-    if (!registrationType || typeof registrationType !== "string") return res.status(400).json({ success: false, error: "registrationType required" });
+    if (!isValidEmail(value))
+      return res
+        .status(400)
+        .json({ success: false, error: "Provide a valid email" });
+    if (!registrationType || typeof registrationType !== "string")
+      return res
+        .status(400)
+        .json({ success: false, error: "registrationType required" });
 
     const emailNorm = normalizeEmail(value);
     const regTypeRaw = String(registrationType).trim();
     const role = normalizeToRole(regTypeRaw);
-    if (!role) return res.status(400).json({ success: false, error: "invalid registrationType" });
+    if (!role)
+      return res
+        .status(400)
+        .json({ success: false, error: "invalid registrationType" });
 
     // check existing in registrants/per-role collections
     const existing = await findExistingByEmailMongo(emailNorm, role);
@@ -309,12 +382,21 @@ router.post("/send", express.json({ limit: "2mb" }), async (req, res) => {
     const prev = otpStore.get(key);
     if (prev && prev.cooldownUntil && prev.cooldownUntil > now) {
       const wait = Math.ceil((prev.cooldownUntil - now) / 1000);
-      return res.status(429).json({ success: false, error: `Please wait ${wait}s before requesting another OTP` });
+      return res.status(429).json({
+        success: false,
+        error: `Please wait ${wait}s before requesting another OTP`,
+      });
     }
 
     // generate OTP and store
     const otp = genOtp();
-    otpStore.set(key, { otp, expires: now + OTP_TTL_MS, attempts: 0, lastSentAt: now, cooldownUntil: now + RESEND_COOLDOWN_MS });
+    otpStore.set(key, {
+      otp,
+      expires: now + OTP_TTL_MS,
+      attempts: 0,
+      lastSentAt: now,
+      cooldownUntil: now + RESEND_COOLDOWN_MS,
+    });
 
     // build email template (text + html) per user's requested content
     const subject = "RailTrans Expo — One-Time Password (OTP)";
@@ -338,7 +420,7 @@ router.post("/send", express.json({ limit: "2mb" }), async (req, res) => {
       "RailTrans Expo Support Team",
       "Urban Infra Group",
       "support@railtransexpo.com",
-      "https://www.railtransexpo.com"
+      "https://www.railtransexpo.com",
     ].join("\n");
 
     const html = `<!doctype html>
@@ -368,13 +450,33 @@ router.post("/send", express.json({ limit: "2mb" }), async (req, res) => {
 </html>`;
 
     // send email (may be jsonTransport in dev)
-    const from = process.env.MAIL_FROM || process.env.SMTP_USER || "no-reply@railtransexpo.com";
+    const from =
+      process.env.MAIL_FROM ||
+      process.env.SMTP_USER ||
+      "no-reply@railtransexpo.com";
     try {
-      await transporter.sendMail({ from, to: value, subject, text, html });
+      console.log("MAIL_FROM:", process.env.MAIL_FROM);
+      console.log("SMTP_USER:", process.env.SMTP_USER);
+      console.log("SMTP_HOST:", process.env.SMTP_HOST);
+      const result = await sendMail({
+        to: value,
+        subject,
+        text,
+        html,
+      });
+
+      if (!result.success) {
+        throw new Error(result.error);
+      }
     } catch (mailErr) {
-      console.error("[otp/send] mail send failed:", mailErr && (mailErr.stack || mailErr.message || mailErr));
+      console.error(
+        "[otp/send] mail send failed:",
+        mailErr && (mailErr.stack || mailErr.message || mailErr),
+      );
       otpStore.delete(key);
-      return res.status(500).json({ success: false, error: "Failed to send OTP" });
+      return res
+        .status(500)
+        .json({ success: false, error: "Failed to send OTP" });
     }
 
     return res.json({
@@ -385,7 +487,10 @@ router.post("/send", express.json({ limit: "2mb" }), async (req, res) => {
       expiresInSec: Math.floor(OTP_TTL_MS / 1000),
     });
   } catch (err) {
-    console.error("[otp/send] unexpected:", err && (err.stack || err.message || err));
+    console.error(
+      "[otp/send] unexpected:",
+      err && (err.stack || err.message || err),
+    );
     return res.status(500).json({ success: false, error: "Server error" });
   }
 });
@@ -395,21 +500,29 @@ router.post("/verify", express.json({ limit: "2mb" }), async (req, res) => {
   try {
     const { value, otp, registrationType } = req.body || {};
     if (!isValidEmail(value)) {
-      return res.status(400).json({ success: false, error: "Provide a valid email" });
+      return res
+        .status(400)
+        .json({ success: false, error: "Provide a valid email" });
     }
     if (!registrationType || typeof registrationType !== "string") {
-      return res.status(400).json({ success: false, error: "registrationType required" });
+      return res
+        .status(400)
+        .json({ success: false, error: "registrationType required" });
     }
 
     const emailKey = normalizeEmail(value);
     const regTypeRaw = String(registrationType).trim();
     const role = normalizeToRole(regTypeRaw);
-    if (!role) return res.status(400).json({ success: false, error: "invalid registrationType" });
+    if (!role)
+      return res
+        .status(400)
+        .json({ success: false, error: "invalid registrationType" });
 
     const key = `${role}::${emailKey}`;
     const rec = otpStore.get(key);
 
-    if (!rec) return res.json({ success: false, error: "OTP not found or expired" });
+    if (!rec)
+      return res.json({ success: false, error: "OTP not found or expired" });
 
     if (rec.expires < Date.now()) {
       otpStore.delete(key);
@@ -418,7 +531,9 @@ router.post("/verify", express.json({ limit: "2mb" }), async (req, res) => {
 
     if ((rec.attempts || 0) >= MAX_VERIFY_ATTEMPTS) {
       otpStore.delete(key);
-      return res.status(429).json({ success: false, error: "Too many attempts" });
+      return res
+        .status(429)
+        .json({ success: false, error: "Too many attempts" });
     }
 
     const input = String(otp || "").trim();
@@ -436,9 +551,8 @@ router.post("/verify", express.json({ limit: "2mb" }), async (req, res) => {
 
     const db = await obtainDb();
     await storeOtpToken(db, role, emailKey, verificationToken, OTP_TTL_MS);
-    console.log('[otp] Token stored in MongoDB for:', `${role}::${emailKey}`);
+    console.log("[otp] Token stored in MongoDB for:", `${role}::${emailKey}`);
 
-    
     try {
       const existing = await findExistingByEmailMongo(emailKey, role);
 
@@ -460,9 +574,10 @@ router.post("/verify", express.json({ limit: "2mb" }), async (req, res) => {
       });
     } catch (dbErr) {
       console.error("[otp/verify] DB error:", dbErr);
-      return res.status(500).json({ success: false, error: "Server error during verification" });
+      return res
+        .status(500)
+        .json({ success: false, error: "Server error during verification" });
     }
-
   } catch (err) {
     // ✅ OUTER CATCH (THIS WAS MISSING)
     console.error("[otp/verify] unexpected:", err);
@@ -472,11 +587,11 @@ router.post("/verify", express.json({ limit: "2mb" }), async (req, res) => {
 
 /* ---------- health check ---------- */
 router.get("/health", (req, res) => {
-  res.json({ 
-    status: "ok", 
+  res.json({
+    status: "ok",
     timestamp: new Date().toISOString(),
     storeSize: otpStore.size,
-    mongoAvailable: !!mongoClient
+    mongoAvailable: !!mongoClient,
   });
 });
 module.exports = router;
