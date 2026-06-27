@@ -234,19 +234,30 @@ router.post("/validate", express.json(), async (req, res) => {
  */
 router.post("/scan", express.json({ limit: "2mb" }), async (req, res) => {
   try {
+    console.log("=".repeat(50));
+    console.log("[tickets-scan] /scan STARTED");
+    console.log("[tickets-scan] Request body:", JSON.stringify(req.body, null, 2));
+    
     const incoming = req.body?.ticketId !== undefined ? req.body.ticketId : req.body?.raw;
     const ticketKey = extractTicketId(incoming);
 
+    console.log("[tickets-scan] Extracted ticketKey:", ticketKey);
+
     if (!ticketKey) {
+      console.log("[tickets-scan] ❌ No ticket key found");
       return res.status(400).json({ error: "Invalid ticket" });
     }
 
+    console.log("[tickets-scan] Looking up ticket...");
     const found = await findTicket(ticketKey);
     if (!found) {
+      console.log("[tickets-scan] ❌ Ticket not found");
       return res.status(404).json({ error: "Ticket not found" });
     }
 
     const { doc, collection } = found;
+    console.log("[tickets-scan] Found ticket in collection:", collection);
+    console.log("[tickets-scan] Document keys:", Object.keys(doc));
 
     // Normalize data for badge generator
     const badgeData = {
@@ -256,12 +267,34 @@ router.post("/scan", express.json({ limit: "2mb" }), async (req, res) => {
       ticket_code: doc.ticket_code || doc.data?.ticket_code || ticketKey,
     };
 
-    // ✅ NEW: Generate SIMPLE badge with ONLY QR, Name, Organization
-    // We'll create a new function in badgeGenerator or modify the existing one
-    // For now, let's create a simple HTML to PDF conversion
-    const { generateSimpleBadgePDF } = require("../utils/simpleBadgeGenerator");
+    console.log("[tickets-scan] Badge data:", { 
+      name: badgeData.name, 
+      company: badgeData.company,
+      ticket_code: badgeData.ticket_code 
+    });
+
+    // ✅ Try to load and use simpleBadgeGenerator
+    console.log("[tickets-scan] Loading simpleBadgeGenerator...");
+    let generateSimpleBadgePDF;
+    try {
+      const simpleGenerator = require("../utils/simpleBadgeGenerator");
+      generateSimpleBadgePDF = simpleGenerator.generateSimpleBadgePDF;
+      console.log("[tickets-scan] ✅ simpleBadgeGenerator loaded");
+    } catch (loadErr) {
+      console.error("[tickets-scan] ❌ Failed to load simpleBadgeGenerator:", loadErr.message);
+      // Fallback to regular badge generator if simple one fails
+      console.log("[tickets-scan] ⚠️ Falling back to regular badge generator");
+      const badgeGen = require("../utils/badgeGenerator");
+      const pdfBuffer = await badgeGen.generateBadgePDF(collection, doc, { mode: "scan" });
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `inline; filename=badge-${ticketKey}.pdf`);
+      res.end(pdfBuffer);
+      return;
+    }
     
+    console.log("[tickets-scan] Generating PDF...");
     const pdfBuffer = await generateSimpleBadgePDF(badgeData);
+    console.log("[tickets-scan] ✅ PDF generated! Size:", pdfBuffer.length, "bytes");
 
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
@@ -269,9 +302,18 @@ router.post("/scan", express.json({ limit: "2mb" }), async (req, res) => {
       `inline; filename=badge-${ticketKey}.pdf`
     );
     res.end(pdfBuffer);
+    console.log("[tickets-scan] ✅ Response sent");
+    console.log("=".repeat(50));
   } catch (e) {
-    console.error("[tickets-scan] scan error:", e && (e.stack || e));
-    res.status(500).json({ error: "Server error" });
+    console.error("=".repeat(50));
+    console.error("[tickets-scan] ❌ ERROR in /scan:");
+    console.error("[tickets-scan] Message:", e.message);
+    console.error("[tickets-scan] Stack:", e.stack);
+    console.error("=".repeat(50));
+    res.status(500).json({ 
+      error: "Server error: " + e.message,
+      stack: process.env.NODE_ENV === "development" ? e.stack : undefined
+    });
   }
 });
 
