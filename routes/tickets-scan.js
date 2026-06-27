@@ -230,12 +230,11 @@ router.post("/validate", express.json(), async (req, res) => {
 
 /**
  * POST /api/tickets/scan
- * Returns badge PDF for printing (reuses badge generator with mode:  "scan")
+ * Returns SIMPLE badge PDF with ONLY QR, Name, Organization
  */
 router.post("/scan", express.json({ limit: "2mb" }), async (req, res) => {
   try {
-    const incoming =
-      req.body?.ticketId !== undefined ?  req.body.ticketId : req.body?.raw;
+    const incoming = req.body?.ticketId !== undefined ? req.body.ticketId : req.body?.raw;
     const ticketKey = extractTicketId(incoming);
 
     if (!ticketKey) {
@@ -249,23 +248,20 @@ router.post("/scan", express.json({ limit: "2mb" }), async (req, res) => {
 
     const { doc, collection } = found;
 
-    // Normalize data for badge generator (flatten nested structure)
+    // Normalize data for badge generator
     const badgeData = {
-      ... doc,
-      name: doc.name || doc.data?.name || doc.full_name,
-      company: doc.company || doc.organization || doc.data?.company,
-      ticket_code: doc.ticket_code || doc.data?.ticket_code,
-      txId: doc.txId || doc.data?.txId,
-      paid: doc.paid || doc.data?.paid,
-      amount: doc.amount || doc.data?.amount,
-      total: doc.total || doc.data?.total,
-      price: doc.price || doc.data?.price,
+      ...doc,
+      name: doc.name || doc.data?.name || doc.full_name || "Attendee",
+      company: doc.company || doc.organization || doc.data?.company || "Organization",
+      ticket_code: doc.ticket_code || doc.data?.ticket_code || ticketKey,
     };
 
-    // 🔥 REUSE THE SAME BADGE GENERATOR (mode: "scan")
-    const pdfBuffer = await generateBadgePDF(collection, badgeData, {
-      mode: "scan",
-    });
+    // ✅ NEW: Generate SIMPLE badge with ONLY QR, Name, Organization
+    // We'll create a new function in badgeGenerator or modify the existing one
+    // For now, let's create a simple HTML to PDF conversion
+    const { generateSimpleBadgePDF } = require("../utils/simpleBadgeGenerator");
+    
+    const pdfBuffer = await generateSimpleBadgePDF(badgeData);
 
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
