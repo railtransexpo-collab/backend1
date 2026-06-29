@@ -166,6 +166,12 @@ exports.status = async (req, res) => {
 ========================================================= */
 exports.webhookHandler = async (req, res) => {
   try {
+
+    console.log("==================================");
+    console.log("WEBHOOK HIT");
+    console.log("Time:", new Date().toISOString());
+    console.log("Headers:", req.headers);
+    console.log("==================================");
     const body = req.body.toString();
     const signature = req.headers["x-razorpay-signature"];
 
@@ -174,6 +180,8 @@ exports.webhookHandler = async (req, res) => {
       .update(body)
       .digest("hex");
 
+    console.log("Received Signature:", signature);
+console.log("Expected Signature:", expectedSignature);
     if (signature !== expectedSignature) {
       console.error("[webhook] Invalid signature");
       return res.status(400).json({
@@ -207,13 +215,15 @@ exports.webhookHandler = async (req, res) => {
         provider_order_id: orderId,
       });
 
+      console.log("Entire Event:");
+console.log(JSON.stringify(event, null, 2));
       if (!existing) {
         console.error("[webhook] Payment record not found for order:", orderId);
         return res.json({ success: true });
       }
 
-      // Update payment record
-      await paymentsCol.updateOne(
+   const updateResult = await paymentsCol.updateOne(
+    
         { provider_order_id: orderId },
         {
           $set: {
@@ -227,6 +237,7 @@ exports.webhookHandler = async (req, res) => {
           },
         },
       );
+      console.log("Update Result:", updateResult);
 
       console.log("[webhook] Payment record updated");
 
