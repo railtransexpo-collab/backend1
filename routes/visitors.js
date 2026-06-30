@@ -189,25 +189,39 @@ router.post("/", async (req, res) => {
     else if (form.affiliation) company = form.affiliation;
     if (!company && form.data && form.data.company) company = form.data.company;
 
-    const doc = {
-      role: "visitor",
-      name: form.name || null,
-      email,
-      mobile: form.mobile || null,
-      company: company || null,
-      ticket_code,
-      txId: form.txId || null,
-      ticket_price: Number(form.ticket_price || 0),
-      ticket_gst: Number(form.ticket_gst || 0),
-      ticket_total: Number(form.ticket_total || 0),
-      data: form,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      added_by_admin: !!body.added_by_admin,
-      admin_created_at: body.added_by_admin
-        ? new Date(body.admin_created_at || Date.now())
-        : undefined,
-    };
+  const doc = {
+  role: "visitor",
+
+  name: form.name || null,
+  email,
+  mobile: form.mobile || null,
+  company: company || null,
+
+  ticket_code,
+
+  txId: form.txId || null,
+
+  ticket_price: Number(form.ticket_price || 0),
+  ticket_gst: Number(form.ticket_gst || 0),
+  ticket_total: Number(form.ticket_total || 0),
+
+  // ⭐ ADD THESE
+  payment_skipped: !!form.payment_skipped,
+  payment_status: form.payment_status || "pending",
+  paymentMethod: form.paymentMethod || null,
+  amount_paid: Number(form.amount_paid || 0),
+
+  data: form,
+
+  createdAt: new Date(),
+  updatedAt: new Date(),
+
+  added_by_admin: !!body.added_by_admin,
+
+  admin_created_at: body.added_by_admin
+    ? new Date(body.admin_created_at || Date.now())
+    : undefined,
+};
 
     const r = await coll.insertOne(doc);
     const insertedId = r.insertedId ? String(r.insertedId) : null;
