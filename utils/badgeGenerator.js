@@ -49,7 +49,7 @@ function safeImage(doc, filePath, x, y, width, extraOpts = {}) {
       path.basename(filePath),
     ),
     "C:\\Users\\Jaya Singh\\Demo\\backend\\assets\\logos\\" +
-      path.basename(filePath),
+    path.basename(filePath),
   ];
   for (const p of candidates) {
     if (fs.existsSync(p)) {
@@ -62,7 +62,7 @@ function safeImage(doc, filePath, x, y, width, extraOpts = {}) {
           ...extraOpts,
         });
         return true;
-      } catch (_) {}
+      } catch (_) { }
     }
   }
   console.warn(`⚠️  Image not found: ${path.basename(filePath)}`);
@@ -303,38 +303,42 @@ function drawBodyBackground(doc) {
 async function drawQRCard(doc, ticketCode, entity, mode, name, company) {
   const qc = C.QR_CARD;
 
-  // Generate QR code with larger size
+  // QR payload
   const qrPayload =
     mode === "scan"
       ? ticketCode
-      : JSON.stringify({ ticket_code: ticketCode, entity });
+      : JSON.stringify({
+        ticket_code: ticketCode,
+        entity,
+      });
+
   const qrBuf = await getCachedQR(qrPayload, C.QR.size * 2);
 
-  const qrX = qc.x + (qc.width - C.QR.size) / 2;
-  const qrY = qc.y + 20; // Adjusted for larger QR
-  doc.image(qrBuf, qrX, qrY, { width: C.QR.size });
+  // -----------------------------
+  // NAME
+  // -----------------------------
+  let currentY = qc.y + 18;
 
-  // Calculate text starting position
-  const textStartY = qrY + C.QR.size + (Number(C?.TEXT_AREA?.gapAfterQr) || 15);
-
-  // Draw NAME - BOLDER AND BIGGER
   doc
-    .fillColor("#000")
+    .fillColor("#000000")
     .font("Helvetica-Bold")
     .fontSize(C.TEXT_AREA.nameFontSize);
 
-  // Calculate name height
   const nameHeight = doc.heightOfString(name, {
     width: qc.width - 30,
     align: "center",
   });
 
-  doc.text(name, qc.x + 15, textStartY, {
+  doc.text(name, qc.x + 15, currentY, {
     width: qc.width - 30,
     align: "center",
   });
 
-  // Draw COMPANY - BOLDER AND BIGGER
+  currentY += nameHeight + 4;
+
+  // -----------------------------
+  // COMPANY
+  // -----------------------------
   if (
     company &&
     company.trim() !== "" &&
@@ -342,18 +346,31 @@ async function drawQRCard(doc, ticketCode, entity, mode, name, company) {
     company !== "NULL"
   ) {
     doc
-      .fillColor("#333") // Darker for better contrast
-      .font("Helvetica-Bold") // Make company bold too
+      .fillColor("#333333")
+      .font("Helvetica-Bold")
       .fontSize(C.TEXT_AREA.companyFontSize);
 
-    const companyY = textStartY + nameHeight + 2;
-
-    doc.text(company, qc.x + 15, companyY, {
+    const companyHeight = doc.heightOfString(company, {
       width: qc.width - 30,
       align: "center",
-      lineBreak: true,
     });
+
+    doc.text(company, qc.x + 15, currentY, {
+      width: qc.width - 30,
+      align: "center",
+    });
+
+    currentY += companyHeight + 10;
   }
+
+  // -----------------------------
+  // QR CODE
+  // -----------------------------
+  const qrX = qc.x + (qc.width - C.QR.size) / 2;
+
+  doc.image(qrBuf, qrX, currentY, {
+    width: C.QR.size,
+  });
 }
 
 function drawFooter(doc) {

@@ -25,6 +25,8 @@ app.use(
     },
   }),
 );
+const agendaUploadsDir = path.join(__dirname, "uploads/agenda");
+if (!fs.existsSync(agendaUploadsDir)) fs.mkdirSync(agendaUploadsDir, { recursive: true });
 
 // --- CORS (configurable) ---
 const defaultOrigins = [
@@ -144,7 +146,14 @@ async function obtainDb() {
     return null;
   }
 }
-
+let agendaRouter = null;
+try {
+  agendaRouter = require("./routes/agenda");
+  console.log("✅ Loaded agenda router");
+} catch (e) {
+  console.warn("No agenda router found at ./routes/agenda.js");
+  agendaRouter = null;
+}
 // --- Routes ---
 // Load core routers (some may be SQL or Mongo variants)
 let visitorsRouter = null;
@@ -385,6 +394,13 @@ if (exhibitorConfigRouter) {
   console.warn(
     "No exhibitor-config router found (routes/exhibitor-config-mongo.js or routes/exhibitorConfig.js missing)",
   );
+}
+// Agenda routes
+if (agendaRouter) {
+  app.use("/api/agenda", agendaRouter);
+  console.log("Mounted /api/agenda");
+} else {
+  console.warn("No agenda router found - agenda features disabled");
 }
 
 // Partners: partners CRUD and partner-config (ensure mounted at /api/partner-config)
@@ -737,6 +753,10 @@ const PORT = process.env.PORT || 3000;
         60 * 60 * 1000,
       ); // Check every 1 hour (so it catches the reminder dates)
 
+      console.log(
+        " - /api/agenda ->",
+        agendaRouter ? "mounted" : "fallback/none",
+      );
       console.log(
         "[reminder-sender] Started (runs every 24h, sends ticket emails with badges)",
       );
