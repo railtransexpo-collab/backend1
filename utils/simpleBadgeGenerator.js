@@ -3,7 +3,7 @@ const PDFDocument = require("pdfkit");
 
 const MM = 2.83465;
 
-// Sticker Size: 95mm × 125mm
+
 const PAGE_WIDTH = 95 * MM;
 const PAGE_HEIGHT = 125 * MM;
 
