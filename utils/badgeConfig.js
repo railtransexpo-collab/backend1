@@ -114,13 +114,13 @@ const QR_CARD = {
 };
 
 // QR is square; "wider" == slightly larger
-const QR = { size: 84 };
+const QR = { size: 168 };
 
 // ─── Text Areas ──────────────────────────────────────────────────────────────
 const TEXT_AREA = {
   nameY:           362,
   companyY:        380,
-  nameFontSize:    13, 
+  nameFontSize:    16, 
   companyFontSize: 12,
   // Extra spacing so name/company sit a bit lower
   gapAfterQr:      22,
