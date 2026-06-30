@@ -143,9 +143,12 @@ exports.status = async (req, res) => {
       });
     }
 
-    const payment = await db.collection("payments").findOne({
-      reference_id,
-    });
+ const payment = await db.collection("payments").findOne(
+  { reference_id },
+  {
+    sort: { created_at: -1 },
+  }
+);
 
     return res.json({
       success: true,
@@ -248,6 +251,11 @@ exports.webhookHandler = async (req, res) => {
       console.log("Update Result:", updateResult);
 
       console.log("[webhook] Payment record updated");
+      const updated = await paymentsCol.findOne({
+  provider_order_id: orderId,
+});
+
+console.log("AFTER UPDATE STATUS:", updated?.status);
 
       const metadata = existing.metadata || payment.notes || {};
       console.log("[webhook] Metadata:", JSON.stringify(metadata, null, 2));
