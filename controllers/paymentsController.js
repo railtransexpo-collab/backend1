@@ -104,14 +104,14 @@ exports.createOrder = async (req, res) => {
       console.warn("[DB] save payment failed:", dbErr.message);
     }
 
-    
+
     return res.json({
       success: true,
       key: process.env.RAZORPAY_KEY_ID,
       orderId: order.id,
       amount: order.amount,
       currency: order.currency,
-     
+
     });
   } catch (err) {
     console.error("createOrder error:", err);
@@ -180,8 +180,16 @@ exports.webhookHandler = async (req, res) => {
       .update(body)
       .digest("hex");
 
+    console.log("Webhook Secret Exists:", !!process.env.RAZORPAY_WEBHOOK_SECRET);
+    console.log(
+      "Webhook Secret Length:",
+      process.env.RAZORPAY_WEBHOOK_SECRET
+        ? process.env.RAZORPAY_WEBHOOK_SECRET.length
+        : 0
+    );
+
     console.log("Received Signature:", signature);
-console.log("Expected Signature:", expectedSignature);
+    console.log("Expected Signature:", expectedSignature);
     if (signature !== expectedSignature) {
       console.error("[webhook] Invalid signature");
       return res.status(400).json({
@@ -216,14 +224,14 @@ console.log("Expected Signature:", expectedSignature);
       });
 
       console.log("Entire Event:");
-console.log(JSON.stringify(event, null, 2));
+      console.log(JSON.stringify(event, null, 2));
       if (!existing) {
         console.error("[webhook] Payment record not found for order:", orderId);
         return res.json({ success: true });
       }
 
-   const updateResult = await paymentsCol.updateOne(
-    
+      const updateResult = await paymentsCol.updateOne(
+
         { provider_order_id: orderId },
         {
           $set: {
