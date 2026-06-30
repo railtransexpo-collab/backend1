@@ -1,6 +1,12 @@
 const QRCode = require("qrcode");
 const PDFDocument = require("pdfkit");
 
+const MM = 2.83465;
+
+// 95mm × 125mm
+const PAGE_WIDTH = 95 * MM;
+const PAGE_HEIGHT = 125 * MM;
+
 async function generateSimpleBadgePDF(badgeData) {
   const {
     name = "Attendee",
@@ -11,18 +17,19 @@ async function generateSimpleBadgePDF(badgeData) {
   return new Promise((resolve, reject) => {
     try {
       const doc = new PDFDocument({
-        size: [350, 490],
+        size: [PAGE_WIDTH, PAGE_HEIGHT],
         margin: 0,
       });
 
       const buffers = [];
+
       doc.on("data", buffers.push.bind(buffers));
       doc.on("end", () => resolve(Buffer.concat(buffers)));
 
       QRCode.toDataURL(
         ticket_code,
         {
-          width: 140,
+          width: 400,
           margin: 1,
           color: {
             dark: "#000000",
@@ -32,46 +39,40 @@ async function generateSimpleBadgePDF(badgeData) {
         (err, qrDataUrl) => {
           if (err) return reject(err);
 
-          doc.rect(0, 0, 350, 490).fill("#FFFFFF");
+          // Background
+          doc.rect(0, 0, PAGE_WIDTH, PAGE_HEIGHT).fill("#FFFFFF");
 
-          // -------------------------
-          // NAME (TOP)
-          // -------------------------
+          // --------------------------
+          // NAME
+          // --------------------------
           doc
             .font("Helvetica-Bold")
             .fontSize(16)
             .fillColor("#111111")
-            .text(String(name).toUpperCase(), 25, 60, {
-              width: 300,
+            .text(String(name).toUpperCase(), 15, 25, {
+              width: PAGE_WIDTH - 30,
               align: "center",
             });
 
-          // -------------------------
+          // --------------------------
           // COMPANY
-          // -------------------------
+          // --------------------------
           doc
             .font("Helvetica")
-            .fontSize(13)
+            .fontSize(11)
             .fillColor("#666666")
-            .text(String(company), 25, 88, {
-              width: 300,
+            .text(String(company), 15, 50, {
+              width: PAGE_WIDTH - 30,
               align: "center",
             });
 
-          // -------------------------
-          // Divider
-          // -------------------------
-          doc
-            .moveTo(40, 120)
-            .lineTo(310, 120)
-            .stroke("#d1d5db");
+          // --------------------------
+          // QR CODE
+          // --------------------------
+          const qrSize = 110;
 
-          // -------------------------
-          // QR BELOW
-          // -------------------------
-          const qrSize = 90;
-          const qrX = (350 - qrSize) / 2;
-          const qrY = 145;
+          const qrX = (PAGE_WIDTH - qrSize) / 2;
+          const qrY = 95;
 
           const base64 = qrDataUrl.replace(
             /^data:image\/png;base64,/,

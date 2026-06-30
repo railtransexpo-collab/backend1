@@ -395,12 +395,12 @@ if (exhibitorConfigRouter) {
     "No exhibitor-config router found (routes/exhibitor-config-mongo.js or routes/exhibitorConfig.js missing)",
   );
 }
-// Agenda routes
+// Agenda routes - MOUNT AFTER OTHER ROUTES
 if (agendaRouter) {
   app.use("/api/agenda", agendaRouter);
-  console.log("Mounted /api/agenda");
+  console.log("✅ Mounted /api/agenda");
 } else {
-  console.warn("No agenda router found - agenda features disabled");
+  console.warn("⚠️ No agenda router found - agenda features disabled");
 }
 
 // Partners: partners CRUD and partner-config (ensure mounted at /api/partner-config)
@@ -456,7 +456,10 @@ if (couponsRouter) {
 
 // Other API routes (mount if available)
 if (otpRouter) app.use("/api/otp", otpRouter);
-if (paymentRouter) app.use("/api/payment", paymentRouter);
+if (paymentRouter) {
+  app.use("/api/payment", paymentRouter);
+  app.use("/api/razorpay", paymentRouter);
+}
 // Default small limit for most routes
 app.use(express.json({ limit: "1mb" }));
 
