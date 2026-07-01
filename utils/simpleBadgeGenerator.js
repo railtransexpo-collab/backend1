@@ -61,7 +61,7 @@ async function generateSimpleBadgePDF(badgeData) {
             .font("Helvetica")
             .fontSize(10)
             .fillColor("#666666")
-            .text(String(company), 15, 92, {
+            .text(String(company), 15, 88, {
               width: PAGE_WIDTH - 30,
               align: "center",
             });
@@ -69,10 +69,10 @@ async function generateSimpleBadgePDF(badgeData) {
           // ============================
           // QR CODE
           // ============================
-          const qrSize = 85;
+          const qrSize = 75;
 
           const qrX = (PAGE_WIDTH - qrSize) / 2;
-          const qrY = 138;
+          const qrY = 110;
 
           const base64 = qrDataUrl.replace(
             /^data:image\/png;base64,/,
