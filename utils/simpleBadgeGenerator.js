@@ -49,7 +49,7 @@ async function generateSimpleBadgePDF(badgeData) {
             .font("Helvetica-Bold")
             .fontSize(15)
             .fillColor("#111111")
-            .text(String(name).toUpperCase(), 15, 70, {
+            .text(String(name).toUpperCase(), 15, 106, {
               width: PAGE_WIDTH - 30,
               align: "center",
             });
@@ -61,7 +61,7 @@ async function generateSimpleBadgePDF(badgeData) {
             .font("Helvetica")
             .fontSize(10)
             .fillColor("#666666")
-            .text(String(company), 15, 88, {
+            .text(String(company), 15, 124, {
               width: PAGE_WIDTH - 30,
               align: "center",
             });
@@ -72,7 +72,7 @@ async function generateSimpleBadgePDF(badgeData) {
           const qrSize = 75;
 
           const qrX = (PAGE_WIDTH - qrSize) / 2;
-          const qrY = 110;
+          const qrY = 146;
 
           const base64 = qrDataUrl.replace(
             /^data:image\/png;base64,/,
