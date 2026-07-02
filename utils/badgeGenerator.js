@@ -602,4 +602,4 @@ async function generateBadgePDF(entity, data, options = {}) {
   });
 }
 
-module.exports = { generateBadgePDF };
+module.exports = { generateBadgePDF,generateScanBadgePDF };

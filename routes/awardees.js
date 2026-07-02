@@ -1040,5 +1040,73 @@ router.delete("/:id", async (req, res) => {
       .json({ success: false, error: "Failed to delete awardee" });
   }
 });
+const { generateBadgePDF } = require("../utils/badgeGenerator");
+const archiver = require("archiver");
+router.get("/download-all", async (req, res) => {
+  try {
+    const db = await obtainDb();
+    if (!db) {
+      return res.status(500).json({ success: false, error: "Database not ready" });
+    }
+
+    const docs = await db.collection("awardees").find({}).toArray();
+    
+    if (!docs || docs.length === 0) {
+      return res.status(404).json({ success: false, error: "No records found" });
+    }
+
+    res.attachment("Awardees-Badges.zip");
+    const archive = archiver("zip", { zlib: { level: 9 } });
+    archive.pipe(res);
+
+    for (const doc of docs) {
+      try {
+        const pdf = await generateBadgePDF("awardee", doc, { mode: "email" });
+        archive.append(pdf, { 
+          name: `${doc.ticket_code || doc._id}.pdf` 
+        });
+      } catch (err) {
+        console.error(`Failed to generate badge for ${doc._id}:`, err);
+      }
+    }
+
+    await archive.finalize();
+  } catch (error) {
+    console.error("[awardees] download all badges error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+router.get("/:id/download-badge", async (req, res) => {
+  try {
+    const db = await obtainDb();
+    if (!db) {
+      return res.status(500).json({ success: false, error: "Database not ready" });
+    }
+
+    const id = req.params.id;
+    const oid = toObjectId(id);
+    if (!oid) {
+      return res.status(400).json({ success: false, error: "Invalid ID" });
+    }
+
+    const doc = await db.collection("awardees").findOne({ _id: oid });
+    if (!doc) {
+      return res.status(404).json({ success: false, error: "Awardee not found" });
+    }
+
+    const pdfBuffer = await generateBadgePDF("awardee", doc, { mode: "email" });
+    
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${doc.ticket_code || doc._id}.pdf"`
+    );
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error("[awardees] download badge error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 
 module.exports = router;

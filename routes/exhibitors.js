@@ -876,5 +876,74 @@ RailTrans Expo Team`,
     });
   }
 });
+const { generateBadgePDF } = require("../utils/badgeGenerator");
+const archiver = require("archiver");
+
+router.get("/download-all", async (req, res) => {
+  try {
+    const db = await obtainDb();
+    if (!db) {
+      return res.status(500).json({ success: false, error: "Database not ready" });
+    }
+
+    const docs = await db.collection("exhibitors").find({}).toArray();
+    
+    if (!docs || docs.length === 0) {
+      return res.status(404).json({ success: false, error: "No records found" });
+    }
+
+    res.attachment("Exhibitors-Badges.zip");
+    const archive = archiver("zip", { zlib: { level: 9 } });
+    archive.pipe(res);
+
+    for (const doc of docs) {
+      try {
+        const pdf = await generateBadgePDF("exhibitor", doc, { mode: "email" });
+        archive.append(pdf, { 
+          name: `${doc.ticket_code || doc._id}.pdf` 
+        });
+      } catch (err) {
+        console.error(`Failed to generate badge for ${doc._id}:`, err);
+      }
+    }
+
+    await archive.finalize();
+  } catch (error) {
+    console.error("[exhibitors] download all badges error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+router.get("/:id/download-badge", async (req, res) => {
+  try {
+    const db = await obtainDb();
+    if (!db) {
+      return res.status(500).json({ success: false, error: "Database not ready" });
+    }
+
+    const id = req.params.id;
+    const oid = toObjectId(id);
+    if (!oid) {
+      return res.status(400).json({ success: false, error: "Invalid ID" });
+    }
+
+    const doc = await db.collection("exhibitors").findOne({ _id: oid });
+    if (!doc) {
+      return res.status(404).json({ success: false, error: "Exhibitor not found" });
+    }
+
+    const pdfBuffer = await generateBadgePDF("exhibitor", doc, { mode: "email" });
+    
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${doc.ticket_code || doc._id}.pdf"`
+    );
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error("[exhibitors] download badge error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 
 module.exports = router;
