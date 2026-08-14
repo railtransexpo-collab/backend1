@@ -2,7 +2,9 @@ const { buildTicketEmail } = require("./emailTemplate");
 const mailer = require("./mailer");
 const roleConfig = require("./emailRoleConfig");
 const mongoClient = require("./mongoClient");
-
+const {
+  generateAttendingCardPDF,
+} = require("./attendingCardGenerator");
 // Ensure no trailing slash
 function sanitizeUrl(url) {
   if (!url) return "";
@@ -176,6 +178,12 @@ module.exports = async function sendTicketEmail({ entity, record, frontendBase =
       ? String(options.previousCategory)
       : null;
 
+  const includeAttendingCard =
+  options &&
+  typeof options === "object"
+    ? options.includeAttendingCard === true
+    : false;
+
   const emailPayload = await buildTicketEmail({
     frontendBase: frontendUrlSafe,
     backendBase: backendUrlSafe,   // ✅ ADD THIS
@@ -194,16 +202,62 @@ module.exports = async function sendTicketEmail({ entity, record, frontendBase =
   // Override subject if needed
   if (config.subjectPrefix) emailPayload.subject = `RailTrans Expo — ${config.subjectPrefix}`;
 
-  console.log("[sendTicketEmail] Sending to:", doc.email);
-  console.log("[sendTicketEmail] Subject:", emailPayload.subject);
+ console.log("[sendTicketEmail] Sending to:", doc.email);
+console.log("[sendTicketEmail] Subject:", emailPayload.subject);
 
-  const result = await mailer.sendMail({
-    to: doc.email,
-    subject: emailPayload.subject,
-    text: emailPayload.text,
-    html: emailPayload.html,
-    attachments: [],
-  });
+const attachments = [];
+
+if (includeAttendingCard) {
+  try {
+    console.log(
+      "[sendTicketEmail] Generating Attending Card for:",
+      doc.ticket_code || doc._id || doc.id
+    );
+
+    const attendingCardPDF =
+      await generateAttendingCardPDF(doc);
+
+    if (!Buffer.isBuffer(attendingCardPDF)) {
+      throw new Error(
+        "Attending Card generator did not return a valid PDF buffer"
+      );
+    }
+
+    const ticketCode =
+      doc.ticket_code ||
+      doc.ticketCode ||
+      doc._id ||
+      doc.id;
+
+    attachments.push({
+      filename: `RailTrans-Attending-Card-${ticketCode}.pdf`,
+      content: attendingCardPDF,
+      contentType: "application/pdf",
+    });
+
+    console.log(
+      "[sendTicketEmail] ✅ Attending Card attached:",
+      attendingCardPDF.length,
+      "bytes"
+    );
+  } catch (err) {
+    console.error(
+      "[sendTicketEmail] ❌ Attending Card generation failed:",
+      err.stack || err
+    );
+
+    // Do NOT fail the complete email just because
+    // Attending Card generation failed.
+  }
+}
+
+const result = await mailer.sendMail({
+  to: doc.email,
+  subject: emailPayload.subject,
+  text: emailPayload.text,
+  html: emailPayload.html,
+  attachments,
+});
 
   if (result?.success) {
     console.log("[sendTicketEmail] ✅ Email sent successfully");

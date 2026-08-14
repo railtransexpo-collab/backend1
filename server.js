@@ -376,6 +376,20 @@ try {
     );
 }
 
+
+// --- Attending Card router ---
+let attendingCardRouter = null;
+try {
+  attendingCardRouter = require("./routes/attendingCard");
+  console.log("✅ Loaded attending-card router");
+} catch (e) {
+  attendingCardRouter = null;
+  console.warn(
+    "⚠️ No attending-card router found at ./routes/attendingCard.js",
+    e.message
+  );
+}
+
 // --- Mount routes (always relative paths) ---
 // Visitors
 if (visitorsRouter) app.use("/api/visitors", visitorsRouter);
@@ -492,6 +506,16 @@ if (ticketDownload) {
 } else {
   console.warn(
     "⚠️  No ticketDownload router (routes/ticketDownload.js missing) - email download buttons will not work",
+  );
+}
+
+// Attending Card
+if (attendingCardRouter) {
+  app.use("/api/attending-card", attendingCardRouter);
+  console.log("✅ Mounted /api/attending-card");
+} else {
+  console.warn(
+    "⚠️ No attending-card router - attending card downloads disabled"
   );
 }
 
