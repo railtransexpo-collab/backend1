@@ -1,7 +1,6 @@
 "use strict";
 
 const fs = require("fs");
-const path = require("path");
 const PDF = require("pdfkit");
 const QRCode = require("qrcode");
 
@@ -9,8 +8,8 @@ const C = require("./attendingCardConfig");
 
 async function getQR(text, size) {
   const qrDataUrl = await QRCode.toDataURL(String(text), {
-    errorCorrectionLevel: "M",
-    margin: 1,
+    errorCorrectionLevel: C.qr.errorCorrectionLevel || "M",
+    margin: C.qr.margin ?? 1,
     width: size * 2,
   });
 
@@ -63,12 +62,16 @@ async function generateAttendingCardPDF(data = {}) {
         data.name ||
         data.full_name ||
         data.fullName ||
+        data.data?.name ||
+        data.data?.full_name ||
         "";
 
       const designation =
         data.designation ||
         data.job_title ||
         data.title ||
+        data.data?.designation ||
+        data.data?.job_title ||
         "";
 
       const company =
@@ -76,10 +79,14 @@ async function generateAttendingCardPDF(data = {}) {
         data.organization ||
         data.companyName ||
         data.company_name ||
+        data.data?.company ||
+        data.data?.organization ||
         "";
 
+      // Use A4 from config
       const doc = new PDF({
-        size: [C.PAGE.width, C.PAGE.height],
+        size: C.pdf.size || "A4",
+        layout: C.pdf.layout || "portrait",
         margin: 0,
         compress: true,
       });
@@ -94,146 +101,250 @@ async function generateAttendingCardPDF(data = {}) {
         resolve(Buffer.concat(buffers));
       });
 
-      // Background
-      doc
-        .rect(
-          0,
-          0,
-          C.PAGE.width,
-          C.PAGE.height
-        )
-        .fill(C.COLORS.background);
+      const pageWidth = doc.page.width;
+      const pageHeight = doc.page.height;
 
+      // --------------------------------------------------
+      // Background
+      // --------------------------------------------------
+
+      doc
+        .rect(0, 0, pageWidth, pageHeight)
+        .fill(C.colors.background);
+
+      // --------------------------------------------------
       // Border
+      // --------------------------------------------------
+
       doc
         .lineWidth(1)
         .rect(
           10,
           10,
-          C.PAGE.width - 20,
-          C.PAGE.height - 20
+          pageWidth - 20,
+          pageHeight - 20
         )
-        .stroke(C.COLORS.border);
+        .stroke(C.colors.border);
 
-      // RailTrans logo
-      safeImage(
-        doc,
-        C.LOGOS.railtrans,
-        30,
-        25,
-        150
-      );
+      // --------------------------------------------------
+      // RailTrans Logo
+      // --------------------------------------------------
 
+      // Your current config does not define a railtrans logo.
+      // So don't try C.LOGOS.railtrans here.
+      // Add it to config later if required.
+
+      // --------------------------------------------------
+      // Top logos
+      // Hosted by | Association | Supported by
+      // --------------------------------------------------
+
+      if (C.layout?.topLogos?.enabled) {
+        const y = 35;
+
+        safeImage(
+          doc,
+          C.logos.hostedBy?.file,
+          50,
+          y,
+          120
+        );
+
+        safeImage(
+          doc,
+          C.logos.association?.file,
+          (pageWidth - 140) / 2,
+          y,
+          140
+        );
+
+        safeImage(
+          doc,
+          C.logos.supportedBy?.file,
+          pageWidth - 170,
+          y,
+          120
+        );
+      }
+
+      // --------------------------------------------------
       // Title
+      // --------------------------------------------------
+
       doc
-        .fillColor(C.COLORS.primary)
+        .fillColor(C.colors.primary)
         .font("Helvetica-Bold")
-        .fontSize(24)
+        .fontSize(C.pdf.titleFontSize || 22)
         .text(
-          "ATTENDING CARD",
+          C.card.title || "ATTENDING CARD",
           30,
-          110,
+          125,
           {
-            width: C.PAGE.width - 60,
+            width: pageWidth - 60,
             align: "center",
           }
         );
 
-      // Name
-      doc
-        .fillColor(C.COLORS.text)
-        .font("Helvetica-Bold")
-        .fontSize(22)
-        .text(
-          name,
-          40,
-          155,
-          {
-            width: C.PAGE.width - 200,
-            align: "left",
-          }
+      // --------------------------------------------------
+      // Participant information
+      // --------------------------------------------------
+
+      const participantTop = 180;
+
+      if (C.card.fields.name) {
+        doc
+          .fillColor(C.colors.text)
+          .font("Helvetica-Bold")
+          .fontSize(C.pdf.nameFontSize || 28)
+          .text(
+            name || "Participant",
+            40,
+            participantTop,
+            {
+              width: pageWidth - 80,
+              align: "center",
+            }
+          );
+      }
+
+      if (C.card.fields.designation) {
+        doc
+          .fillColor(C.colors.muted)
+          .font("Helvetica")
+          .fontSize(C.pdf.designationFontSize || 16)
+          .text(
+            designation || "",
+            40,
+            participantTop + 50,
+            {
+              width: pageWidth - 80,
+              align: "center",
+            }
+          );
+      }
+
+      if (C.card.fields.company) {
+        doc
+          .fillColor(C.colors.text)
+          .font("Helvetica-Bold")
+          .fontSize(C.pdf.companyFontSize || 17)
+          .text(
+            company || "",
+            40,
+            participantTop + 80,
+            {
+              width: pageWidth - 80,
+              align: "center",
+            }
+          );
+      }
+
+      // --------------------------------------------------
+      // QR Code
+      // --------------------------------------------------
+
+      if (C.qr?.enabled) {
+        const qrSize = C.qr.size || 150;
+
+        const qrBuffer = await getQR(
+          C.qr.value || ticketCode,
+          qrSize
         );
 
-      // Designation
+        doc.image(
+          qrBuffer,
+          (pageWidth - qrSize) / 2,
+          315,
+          {
+            width: qrSize,
+          }
+        );
+      }
+
+      // --------------------------------------------------
+      // Share message
+      // --------------------------------------------------
+
       doc
-        .fillColor(C.COLORS.muted)
+        .fillColor(C.colors.muted)
         .font("Helvetica")
-        .fontSize(14)
+        .fontSize(C.pdf.messageFontSize || 16)
         .text(
-          designation,
-          40,
-          195,
+          C.card.shareMessage || "",
+          60,
+          485,
           {
-            width: C.PAGE.width - 200,
+            width: pageWidth - 120,
+            align: "center",
           }
         );
 
-      // Company
+      // --------------------------------------------------
+      // Website
+      // --------------------------------------------------
+
       doc
-        .fillColor(C.COLORS.text)
+        .fillColor(C.colors.primary)
         .font("Helvetica-Bold")
-        .fontSize(16)
+        .fontSize(C.pdf.websiteFontSize || 12)
         .text(
-          company,
+          C.card.websiteLabel ||
+            C.event.website ||
+            "",
           40,
-          225,
+          535,
           {
-            width: C.PAGE.width - 200,
+            width: pageWidth - 80,
+            align: "center",
           }
         );
 
-      // QR
-      const qrBuffer = await getQR(
-        ticketCode,
-        C.QR.size
-      );
+      // --------------------------------------------------
+      // Event details
+      // --------------------------------------------------
 
-      doc.image(
-        qrBuffer,
-        C.PAGE.width - C.QR.size - 45,
-        140,
-        {
-          width: C.QR.size,
-        }
-      );
-
-      // Registration message
       doc
-        .fillColor(C.COLORS.muted)
+        .fillColor(C.colors.secondary)
         .font("Helvetica")
         .fontSize(11)
         .text(
-          "Please carry this card along with your valid identity proof.",
+          `${C.event.name}\n${C.event.dates}\n${C.event.venue}`,
           40,
-          285,
+          565,
           {
-            width: C.PAGE.width - 80,
+            width: pageWidth - 80,
             align: "center",
+            lineGap: 4,
           }
         );
 
-      // Logos at bottom
+      // --------------------------------------------------
+      // Bottom logos
+      // --------------------------------------------------
+
+      const bottomY = pageHeight - 100;
+
       safeImage(
         doc,
-        C.LOGOS.chamber,
+        C.logos.hostedBy?.file,
         50,
-        330,
+        bottomY,
         100
       );
 
       safeImage(
         doc,
-        C.LOGOS.ministry,
-        250,
-        330,
+        C.logos.association?.file,
+        (pageWidth - 100) / 2,
+        bottomY,
         100
       );
 
       safeImage(
         doc,
-        C.LOGOS.urbanInfra,
-        450,
-        330,
+        C.logos.supportedBy?.file,
+        pageWidth - 150,
+        bottomY,
         100
       );
 
@@ -242,7 +353,7 @@ async function generateAttendingCardPDF(data = {}) {
     } catch (err) {
       console.error(
         "[attendingCardGenerator] error:",
-        err
+        err.stack || err
       );
 
       reject(err);
