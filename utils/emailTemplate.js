@@ -3,7 +3,7 @@
  *
  * buildTicketEmail(... ) - email template builder for ticket delivery
  *
- * ✅ NO PDF ATTACHMENT - badge only via download button
+ * ✅ Attending card PDF is attached in sendTicketEmail(); the email body still keeps a download button
  * ✅ Event details passed from caller (no fetch needed)
  * ✅ Professional responsive design
  * ✅ FIXED:  Download URLs use query params (? entity=visitors&id=xxx)
@@ -139,8 +139,8 @@ async function buildTicketEmail({
 
   const ev = getEventFromForm(form);
 
-  if (!ev.name) ev.name = "6th RailTrans Expo 2026";
-  if (!ev.dates) ev.dates = "3rd & 4th July 2026";
+  if (!ev.name) ev.name = "7th RailTrans Expo 2027";
+  if (!ev.dates) ev.dates = "1, 2 & 3 July, 2027";
   if (!ev.time) ev.time = "";
   if (!ev.venue) ev.venue = "Bharat Mandapam, New Delhi";
 
@@ -177,9 +177,9 @@ async function buildTicketEmail({
   // ✅ SUBJECT - without "E-Badge"
   let subject;
   if (isUpgrade) {
-    subject = `Registration Upgraded – ${participantType} for 6th RailTrans Expo 2026`;
+    subject = `Registration Upgraded – ${participantType} for 7th RailTrans Expo 2027`;
   } else {
-    subject = `Registration Confirmed – ${participantType} for 6th RailTrans Expo 2026`;
+    subject = `Registration Confirmed – ${participantType} for 7th RailTrans Expo 2027`;
   }
 
   // ✅ INTRO TEXT
@@ -187,19 +187,19 @@ async function buildTicketEmail({
   if (isUpgrade) {
     introText = `Great news! Your registration has been successfully upgraded${previousCategory ? ` from ${previousCategory}` : ""} to ${participantType}.`;
   } else if (roleLabel === "VISITOR") {
-    introText = `Thank you for registering to visit the 6th Edition of RailTrans Expo 2026, scheduled to be held on 3rd & 4th July 2026 at Bharat Mandapam, New Delhi.`;
+    introText = `Thank you for registering to visit the 7th Edition of RailTrans Expo 2027, scheduled to be held on 1, 2 & 3 July 2027 at Bharat Mandapam, New Delhi.`;
   } else if (roleLabel === "DELEGATE") {
-    introText = `Thank you for registering as a Delegate for the 6th Edition of RailTrans Expo 2026, scheduled to be held on 3rd & 4th July 2026 at Bharat Mandapam, New Delhi.`;
+    introText = `Thank you for registering as a Delegate for the 7th Edition of RailTrans Expo 2027, scheduled to be held on 1, 2 & 3 July 2027 at Bharat Mandapam, New Delhi.`;
   } else if (roleLabel === "EXHIBITOR") {
-    introText = `Thank you for participating as an Exhibitor at the 6th Edition of RailTrans Expo 2026, scheduled to be held on 3rd & 4th July 2026 at Bharat Mandapam, New Delhi.`;
+    introText = `Thank you for participating as an Exhibitor at the 7th Edition of RailTrans Expo 2027, scheduled to be held on 1, 2 & 3 July 2027 at Bharat Mandapam, New Delhi.`;
   } else if (roleLabel === "PARTNER") {
-    introText = `Thank you for partnering with us for the 6th Edition of RailTrans Expo 2026, scheduled to be held on 3rd & 4th July 2026 at Bharat Mandapam, New Delhi.`;
+    introText = `Thank you for partnering with us for the 7th Edition of RailTrans Expo 2027, scheduled to be held on 1, 2 & 3 July 2027 at Bharat Mandapam, New Delhi.`;
   } else if (roleLabel === "SPEAKER") {
-    introText = `Thank you for participating as a Speaker at the 6th Edition of RailTrans Expo 2026, scheduled to be held on 3rd & 4th July 2026 at Bharat Mandapam, New Delhi.`;
+    introText = `Thank you for participating as a Speaker at the 7th Edition of RailTrans Expo 2027, scheduled to be held on 1, 2 & 3 July 2027 at Bharat Mandapam, New Delhi.`;
   } else if (roleLabel === "AWARDEE") {
-    introText = `Congratulations on being selected as an Awardee for the 6th Edition of RailTrans Expo 2026, scheduled to be held on 3rd & 4th July 2026 at Bharat Mandapam, New Delhi.`;
+    introText = `Congratulations on being selected as an Awardee for the 7th Edition of RailTrans Expo 2027, scheduled to be held on 1, 2 & 3 July 2027 at Bharat Mandapam, New Delhi.`;
   } else {
-    introText = `Thank you for registering to participate in the 6th Edition of RailTrans Expo 2026, scheduled to be held on 3rd & 4th July 2026 at Bharat Mandapam, New Delhi.`;
+    introText = `Thank you for registering to participate in the 7th Edition of RailTrans Expo 2027, scheduled to be held on 1, 2 & 3 July 2027 at Bharat Mandapam, New Delhi.`;
   }
 
   // ✅ PLAIN TEXT VERSION

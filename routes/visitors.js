@@ -48,17 +48,17 @@ function isEmailLike(v) {
 }
 
 function buildVisitorAckEmail({ name = "" } = {}) {
-  const subject = "Thank You for Your Interest in 6th RailTrans Expo 2026";
+  const subject = "Thank You for Your Interest in 7th RailTrans Expo 2027";
   const text = `Dear ${name || "Sir/Ma'am"},
 
-Thank you for registering as a delegate/visitor for the 6th RailTrans Expo 2026.
+Thank you for registering as a delegate/visitor for the 7th RailTrans Expo 2027.
 
 We are delighted to receive your interest in being a part of this prestigious industry platform.
 
 Your registration is currently under the review process, and our team is carefully evaluating the details submitted by you.
 
 Venue: Bharat Mandapam
-Event Dates: 3rd & 4th July 2026
+Event Dates: 1, 2 & 3 July 2027
 
 Our team will get in touch with you shortly regarding the next steps and further coordination.
 
@@ -71,10 +71,10 @@ support@railtransexpo.com
 www.railtransexpo.com`;
 
   const html = `<p>Dear ${name || "Sir/Ma'am"},</p>
-<p>Thank you for registering as a <strong>delegate/visitor</strong> for the <strong>6th RailTrans Expo 2026</strong>.</p>
+<p>Thank you for registering as a <strong>delegate/visitor</strong> for the <strong>7th RailTrans Expo 2027</strong>.</p>
 <p>We are delighted to receive your interest in being a part of this prestigious industry platform.</p>
 <p>Your registration is currently under the review process, and our team is carefully evaluating the details submitted by you.</p>
-<p><strong>Venue:</strong> Bharat Mandapam<br/><strong>Event Dates:</strong> 3rd & 4th July 2026</p>
+<p><strong>Venue:</strong> Bharat Mandapam<br/><strong>Event Dates:</strong> 1, 2 & 3 July 2027</p>
 <p>Our team will get in touch with you shortly regarding the next steps and further coordination.</p>
 <p>Thank you once again for your interest and support. We look forward to the opportunity of welcoming you to the event.</p>
 <p>Warm regards,<br/><strong>Team RailTrans Expo</strong><br/>
@@ -252,7 +252,7 @@ router.post("/", async (req, res) => {
         const result = await sendTicketEmail({
           entity: "visitors",
           record: savedDoc,
-          options: { forceSend: true, includeBadge: true },
+          options: { forceSend: true, includeBadge: true, includeAttendingCard: true },
         });
 
         if (result?.success) {
@@ -390,7 +390,7 @@ router.post("/:id/send-ticket", async (req, res) => {
     const result = await sendTicketEmail({
       entity: "visitors",
       record: doc,
-      options: { forceSend: true, includeBadge: true },
+      options: { forceSend: true, includeBadge: true, includeAttendingCard: true },
     });
     if (result?.success) {
       await col.updateOne(

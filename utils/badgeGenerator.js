@@ -154,57 +154,31 @@ function drawHeader(doc) {
     C.RAILTRANS_LOGO.width,
   );
 
-  // Date squares "03" "04"
-  if (dp?.pill1?.text) {
+  // Date squares "1" "2" "3" centered across the header
+  const pillConfigs = [dp?.pill1, dp?.pill2, dp?.pill3].filter(Boolean);
+  pillConfigs.forEach((pill) => {
     drawSquarePill(
       doc,
-      dp.pill1.text,
-      dp.pill1.x,
-      dp.pill1.y,
-      dp.pill1.width,
-      dp.pill1.height,
-      dp.pill1.bgColor,
-      dp.pill1.textColor,
-      dp.pill1.fontSize,
+      pill.text,
+      pill.x,
+      pill.y,
+      pill.width,
+      pill.height,
+      pill.bgColor,
+      pill.textColor,
+      pill.fontSize,
     );
-  }
-  if (dp?.pill2?.text) {
-    drawSquarePill(
-      doc,
-      dp.pill2.text,
-      dp.pill2.x,
-      dp.pill2.y,
-      dp.pill2.width,
-      dp.pill2.height,
-      dp.pill2.bgColor,
-      dp.pill2.textColor,
-      dp.pill2.fontSize,
-    );
-  }
+  });
 
-  // "JULY" then "2026" — to right of date squares (no overlap with Mandapam)
-  const mandapamLeftEdge = Number(C?.MANDAPAM?.x);
-  const rightLimit = Number.isFinite(mandapamLeftEdge)
-    ? mandapamLeftEdge - 10
-    : C.PAGE.width - 8;
-  const monthMaxWidth = 120;
-
-  const monthBlockY = dp.monthY;
-
-  const monthBlockWidth = 80;
-
-  // CENTER BETWEEN DATE PILLS AND MANDAPAM LOGO
-  const datesRight = dp.pill2.x + dp.pill2.width;
-  const mandapamLeft = C.MANDAPAM.x;
-
+  const monthBlockWidth = 90;
   const monthBlockX =
-    datesRight + (mandapamLeft - datesRight - monthBlockWidth) / 2;
+    Number.isFinite(dp?.monthX) ? dp.monthX : (C.PAGE.width - monthBlockWidth) / 2;
 
   doc
     .fillColor("#000000")
     .font("Helvetica-Bold")
-    .fontSize(19)
-    .text("JULY", monthBlockX, 28, {
+    .fontSize(18)
+    .text("JULY", monthBlockX, dp.monthY || 78, {
       width: monthBlockWidth,
       align: "center",
       lineBreak: false,
@@ -213,8 +187,8 @@ function drawHeader(doc) {
   doc
     .fillColor("#000000")
     .font("Helvetica-Bold")
-    .fontSize(19)
-    .text("2026", monthBlockX, 56, {
+    .fontSize(18)
+    .text("2027", monthBlockX, (dp.monthY || 78) + 20, {
       width: monthBlockWidth,
       align: "center",
       lineBreak: false,

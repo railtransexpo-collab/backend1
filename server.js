@@ -725,7 +725,7 @@ const PORT = process.env.PORT || 3000;
                 const result = await sendTicketEmail({
                   entity: reminder.entity,
                   record: record,
-                  options: { forceSend: true, includeBadge: true },
+                  options: { forceSend: true, includeBadge: true, includeAttendingCard: true },
                 });
 
                 if (result?.success) {

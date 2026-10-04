@@ -54,29 +54,38 @@ const MANDAPAM_TEXT = {
 // Date Pills (03 and 04 with WHITE text on RED background)
 const DATE_PILLS = {
   pill1: { 
-    text: "03", 
-    x: 175, 
+    text: "1", 
+    x: 150, 
     y: 40,
-    width: 34, 
-    height: 34, 
+    width: 32, 
+    height: 32, 
     bgColor: "#d8031c",
     textColor: "#FFFFFF",
     fontSize: 18 
   },
   pill2: { 
-    text: "04", 
-    x: 214, 
+    text: "2", 
+    x: 190, 
     y: 40,
-    width: 34, 
-    height: 34, 
+    width: 32, 
+    height: 32, 
     bgColor: "#0d25c5",
     textColor: "#FFFFFF",
     fontSize: 18 
   },
-  // Add breathing room from the Mandapam logo and keep alignment clean
-  monthX: 238,
-  monthY: 34,
-  // Venue sits under the Mandapam logo with some gap
+  pill3: { 
+    text: "3", 
+    x: 230, 
+    y: 40,
+    width: 32, 
+    height: 32, 
+    bgColor: "#d8031c",
+    textColor: "#FFFFFF",
+    fontSize: 18 
+  },
+  // Centered month block below the date row
+  monthX: 165,
+  monthY: 78,
   venueY: 70,
 };
 

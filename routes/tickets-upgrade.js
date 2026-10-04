@@ -356,6 +356,7 @@ if (amountNum > 0 && !txId) {
           options: {
             forceSend: true,
             includeBadge: true,
+            includeAttendingCard: true,
             isUpgrade: true,
             previousCategory: entityRow.ticket_category || entityRow.category || null
           }

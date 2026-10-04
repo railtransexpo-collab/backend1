@@ -403,6 +403,7 @@ console.log("AFTER UPDATE STATUS:", updated?.status);
                 options: {
                   forceSend: true,
                   includeBadge: true,
+                  includeAttendingCard: true,
                   isUpgrade: true,
                   previousCategory: previousCategory,
                 },
@@ -492,7 +493,7 @@ console.log("AFTER UPDATE STATUS:", updated?.status);
           const result = await sendTicketEmail({
             entity: "visitors",
             record: visitorRecord,
-            options: { forceSend: true, includeBadge: true },
+            options: { forceSend: true, includeBadge: true, includeAttendingCard: true },
           });
 
           if (result && result.success) {

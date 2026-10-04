@@ -62,18 +62,18 @@ function docToOutput(doc) {
  * Ticket emails with badges are sent only via POST /: id/send-ticket
  */
 function buildSpeakerAckEmail({ name = "" } = {}) {
-  const subject = "Thank You for Your Interest in 6th RailTrans Expo 2026";
+  const subject = "Thank You for Your Interest in 7th RailTrans Expo 2027";
 
   const text = `Dear ${name || "Sir/Ma'am"},
 
-Thank you for submitting your application form to participate as a speaker at the 6th RailTrans Expo 2026.
+Thank you for submitting your application form to participate as a speaker at the 7th RailTrans Expo 2027.
 
 We are delighted to receive your interest in being a part of this prestigious industry platform.
 
 Your application is currently under the review process, and our team is carefully evaluating the details submitted by your organization.
 
 Venue: Bharat Mandapam
-Event Dates: 3rd & 4th July 2026
+Event Dates: 1, 2 & 3 July 2027
 
 Our team will get in touch with you shortly regarding the next steps and further coordination.
 
@@ -86,14 +86,14 @@ support@railtransexpo.com
 www.railtransexpo.com`;
 
   const html = `<p>Dear ${name || "Sir/Ma'am"},</p>
-<p>Thank you for submitting your application form to participate as a <strong>speaker</strong> at the <strong>6th RailTrans Expo 2026</strong>.</p>
+<p>Thank you for submitting your application form to participate as a <strong>speaker</strong> at the <strong>7th RailTrans Expo 2027</strong>.</p>
 
 <p>We are delighted to receive your interest in being a part of this prestigious industry platform.</p>
 
 <p>Your application is currently under the review process, and our team is carefully evaluating the details submitted by your organization.</p>
 
 <p><strong>Venue:</strong> Bharat Mandapam<br/>
-<strong>Event Dates:</strong> 3rd & 4th July 2026</p>
+<strong>Event Dates:</strong> 1, 2 & 3 July 2027</p>
 
 <p>Our team will get in touch with you shortly regarding the next steps and further coordination.</p>
 
@@ -438,7 +438,7 @@ router.post("/:id/send-ticket", async (req, res) => {
       const result = await sendTicketEmail({
         entity: "speakers",
         record: doc,
-        options: { forceSend: true, includeBadge: true },
+        options: { forceSend: true, includeBadge: true, includeAttendingCard: true },
       });
 
       if (result && result.success) {

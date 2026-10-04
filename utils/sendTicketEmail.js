@@ -178,11 +178,23 @@ module.exports = async function sendTicketEmail({ entity, record, frontendBase =
       ? String(options.previousCategory)
       : null;
 
+  const includeBadge =
+    options && typeof options === "object"
+      ? options.includeBadge !== false
+      : true;
+
   const includeAttendingCard =
-  options &&
-  typeof options === "object"
-    ? options.includeAttendingCard === true
-    : false;
+    options && typeof options === "object"
+      ? options.includeAttendingCard === true || options.attachAttendingCard === true || options.includeBadge === true
+      : true;
+
+  const shouldAttachAttendingCard = includeAttendingCard === true;
+  const shouldSendBadge = includeBadge !== false;
+
+  console.log("[sendTicketEmail] Email flags:", {
+    includeBadge: shouldSendBadge,
+    includeAttendingCard: shouldAttachAttendingCard,
+  });
 
   const emailPayload = await buildTicketEmail({
     frontendBase: frontendUrlSafe,
@@ -207,7 +219,7 @@ console.log("[sendTicketEmail] Subject:", emailPayload.subject);
 
 const attachments = [];
 
-if (includeAttendingCard) {
+if (shouldAttachAttendingCard) {
   try {
     console.log(
       "[sendTicketEmail] Generating Attending Card for:",
