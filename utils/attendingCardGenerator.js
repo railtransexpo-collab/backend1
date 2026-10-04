@@ -7,14 +7,12 @@ const QRCode = require("qrcode");
 
 const C = require("./attendingCardConfig");
 
-/* ─────────────────────────────────────────────────────────────────────────
- * Helpers
- * ───────────────────────────────────────────────────────────────────────── */
+/* ── helpers ───────────────────────────────────────────────────────────── */
 
 async function getQR(text, size) {
   const qrDataUrl = await QRCode.toDataURL(String(text), {
     errorCorrectionLevel: C.qr.errorCorrectionLevel || "M",
-    margin: C.qr.margin ?? 1,
+    margin: C.qr.margin ?? 0,
     width: size * 2,
   });
   return Buffer.from(qrDataUrl.split(",")[1], "base64");
@@ -25,312 +23,200 @@ function safeImage(doc, filePath, x, y, opts = {}) {
     console.warn("[attendingCard] Logo not found:", filePath);
     return false;
   }
-  try {
-    doc.image(filePath, x, y, opts);
-    return true;
-  } catch (err) {
-    console.warn("[attendingCard] Failed to draw image:", err.message);
-    return false;
-  }
+  try { doc.image(filePath, x, y, opts); return true; }
+  catch (err) { console.warn("[attendingCard] image failed:", err.message); return false; }
 }
 
-/**
- * Draw background image scaled to COVER the full page
- * (preserves aspect ratio, crops overflow) — no black bars.
- */
+/** Draw image scaled to COVER the page — no black bars, no stretch. */
 function drawCoverImage(doc, imgPath, pw, ph) {
-  if (!fs.existsSync(imgPath)) {
-    console.warn("[attendingCard] bg not found:", imgPath);
-    return false;
-  }
+  if (!fs.existsSync(imgPath)) return false;
   try {
     const img = doc.openImage(imgPath);
     const scale = Math.max(pw / img.width, ph / img.height);
     const w = img.width * scale;
     const h = img.height * scale;
-    const x = (pw - w) / 2;
-    const y = (ph - h) / 2;
-    doc.image(img, x, y, { width: w, height: h });
+    doc.image(img, (pw - w) / 2, (ph - h) / 2, { width: w, height: h });
     return true;
   } catch (err) {
-    console.warn("[attendingCard] bg draw failed:", err.message);
+    console.warn("[attendingCard] cover image failed:", err.message);
     return false;
   }
 }
 
-/* ─────────────────────────────────────────────────────────────────────────
- * Main generator
- * ───────────────────────────────────────────────────────────────────────── */
+/* ── main ──────────────────────────────────────────────────────────────── */
 
 async function generateAttendingCardPDF(data = {}) {
   return new Promise(async (resolve, reject) => {
     try {
       const ticketCode =
-        data.ticket_code ||
-        data.ticketCode ||
-        data.data?.ticket_code ||
-        "";
-
+        data.ticket_code || data.ticketCode || data.data?.ticket_code || "";
       if (!ticketCode) throw new Error("ticket_code missing");
 
       const name =
-        data.name ||
-        data.full_name ||
-        data.fullName ||
-        data.data?.name ||
-        data.data?.full_name ||
-        "";
+        data.name || data.full_name || data.fullName ||
+        data.data?.name || data.data?.full_name || "";
 
       const designation =
-        data.designation ||
-        data.job_title ||
-        data.title ||
-        data.data?.designation ||
-        data.data?.job_title ||
-        "";
+        data.designation || data.job_title || data.title ||
+        data.data?.designation || data.data?.job_title || "";
 
       const company =
-        data.company ||
-        data.organization ||
-        data.companyName ||
-        data.company_name ||
-        data.data?.company ||
-        data.data?.organization ||
-        "";
+        data.company || data.organization || data.companyName ||
+        data.company_name || data.data?.company || data.data?.organization || "";
 
       const doc = new PDF({
         size: C.pdf.size || "A4",
         layout: C.pdf.layout || "portrait",
-        margin: 0,
-        compress: true,
+        margin: 0, compress: true,
       });
 
       const buffers = [];
-      doc.on("data", (chunk) => buffers.push(chunk));
+      doc.on("data", (b) => buffers.push(b));
       doc.on("end", () => resolve(Buffer.concat(buffers)));
 
-      const pageWidth  = doc.page.width;
-      const pageHeight = doc.page.height;
+      const PW = doc.page.width;
+      const PH = doc.page.height;
 
-      /* ─────────────────────────────────────────────────────────────
-       * 1. BACKGROUND IMAGE — COVER, no rgba fills
-       * ───────────────────────────────────────────────────────────── */
+      /* 1. Background image (cover) + light white wash (using fillOpacity, NOT rgba) */
+      doc.rect(0, 0, PW, PH).fill(C.colors.background);
       const bgPath = path.join(__dirname, "..", "assets", "bg", "bg.jpeg");
+      drawCoverImage(doc, bgPath, PW, PH);
 
-      // White base first (in case bg fails, no black shows)
-      doc.rect(0, 0, pageWidth, pageHeight).fill(C.colors.background);
-
-      // Draw bg image covering the whole page
-      drawCoverImage(doc, bgPath, pageWidth, pageHeight);
-
-      // Very light white wash (use fillOpacity, NOT rgba string)
       doc.save();
-      doc.fillOpacity(0.15);
-      doc.rect(0, 0, pageWidth, pageHeight).fill("#FFFFFF");
+      doc.fillOpacity(0.25);
+      doc.rect(0, 0, PW, PH).fill("#FFFFFF");
       doc.restore();
       doc.fillOpacity(1);
 
-      /* ─────────────────────────────────────────────────────────────
-       * 2. OUTER ROUNDED PANEL (the white card on top of bg)
-       * ───────────────────────────────────────────────────────────── */
+      /* 2. White card panel inside border */
       const pad = 18;
-      const panelX = pad;
-      const panelY = pad;
-      const panelW = pageWidth  - pad * 2;
-      const panelH = pageHeight - pad * 2;
+      const cardX = pad, cardY = pad;
+      const cardW = PW - pad * 2;
+      const cardH = PH - pad * 2;
 
       doc.save();
-      doc.fillOpacity(0.78);
-      doc.roundedRect(panelX, panelY, panelW, panelH, 18)
-         .fill(C.colors.panelBg);
+      doc.fillOpacity(0.82);
+      doc.roundedRect(cardX, cardY, cardW, cardH, 18).fill(C.colors.panelBg);
       doc.restore();
       doc.fillOpacity(1);
 
-      doc.roundedRect(panelX, panelY, panelW, panelH, 18)
-         .lineWidth(2.2)
-         .stroke(C.colors.panelBorder);
+      doc.roundedRect(cardX, cardY, cardW, cardH, 18)
+         .lineWidth(2.2).stroke(C.colors.panelBorder);
 
-      /* ─────────────────────────────────────────────────────────────
-       * 3. TOP LOGOS: Hosted (L) | Supported (R)
-       * ───────────────────────────────────────────────────────────── */
-      doc.fillColor(C.colors.navyBlue)
-         .font("Helvetica-Bold")
-         .fontSize(9)
-         .text("Hosted by", 48, 32, { width: 110, align: "center" });
+      /* 3. TOP: Hosted by (L) | Supported by (R) */
+      doc.fillColor(C.colors.navyBlue).font("Helvetica-Bold").fontSize(9)
+         .text(C.logos.hostedBy.label, 46, 32, { width: 130, align: "center" });
 
-      doc.fillColor(C.colors.navyBlue)
-         .font("Helvetica-Bold")
-         .fontSize(9)
-         .text("Supported by", pageWidth - 158, 32, { width: 110, align: "center" });
+      doc.fillColor(C.colors.navyBlue).font("Helvetica-Bold").fontSize(9)
+         .text(C.logos.supportedBy.label, PW - 176, 32, { width: 130, align: "center" });
 
-      if (C.layout?.topLogos?.enabled) {
-        safeImage(doc, C.logos.hostedBy?.file,    52, 46, 110);
-        safeImage(doc, C.logos.supportedBy?.file, pageWidth - 168, 42, 110);
-      }
+      safeImage(doc, C.logos.hostedBy.file,    46,  46, 120);
+      safeImage(doc, C.logos.supportedBy.file, PW - 176, 42, 120);
 
-      /* ─────────────────────────────────────────────────────────────
-       * 4. BRAND block: RailTrans logo + tagline + event info
-       * ───────────────────────────────────────────────────────────── */
-      // RailTrans logo (wide) — the source image already contains the ribbon + 7th edition + 2027
-      const logoW = 250;
-      safeImage(doc, C.logos.railtransBrand?.file,
-                (pageWidth - logoW) / 2, 88, logoW);
+      /* 4. RailTrans brand block */
+      const brandW = 230;
+      safeImage(doc, C.logos.railtransBrand.file, (PW - brandW) / 2, 88, brandW);
 
-      doc.fillColor(C.colors.navyBlue)
-         .font("Helvetica-Bold")
-         .fontSize(13)
-         .text("Driving Regional Rail Connectivity", 0, 190, {
-           width: pageWidth, align: "center",
+      doc.fillColor(C.colors.navyBlue).font("Helvetica-Bold").fontSize(13)
+         .text("Driving Regional Rail Connectivity", 0, 195, {
+           width: PW, align: "center",
          });
 
-      doc.fillColor("#c99a2e")
-         .font("Helvetica-Bold")
-         .fontSize(12)
-         .text("TRANSFORMING RAIL TOGETHER", 0, 210, {
-           width: pageWidth, align: "center",
+      doc.fillColor(C.colors.gold).font("Helvetica-Bold").fontSize(12)
+         .text("TRANSFORMING RAIL TOGETHER", 0, 214, {
+           width: PW, align: "center",
          });
 
-      doc.fillColor(C.colors.navyBlue)
-         .font("Helvetica-Bold")
-         .fontSize(20)
-         .text(C.event.name || "7th RailTrans Expo 2027", 0, 232, {
-           width: pageWidth, align: "center",
-         });
+      doc.fillColor(C.colors.navyBlue).font("Helvetica-Bold").fontSize(20)
+         .text(C.event.name, 0, 236, { width: PW, align: "center" });
 
-      /* ─────────────────────────────────────────────────────────────
-       * 5. ATTENDING CARD pill
-       * ───────────────────────────────────────────────────────────── */
-      const titleY = 268;
+      /* 5. ATTENDING CARD pill */
+      const titleW = PW - 140;
+      const titleX = (PW - titleW) / 2;
+      const titleY = 272;
       const titleH = 34;
-      const titleW = pageWidth - 140;
-      const titleX = (pageWidth - titleW) / 2;
 
       doc.roundedRect(titleX, titleY, titleW, titleH, 17)
          .fillAndStroke("#FFFFFF", C.colors.navyBlue);
       doc.lineWidth(1.4);
 
-      doc.fillColor(C.colors.navyBlue)
-         .font("Helvetica-Bold")
-         .fontSize(20)
-         .text(C.card.title || "ATTENDING CARD", titleX, titleY + 6, {
+      doc.fillColor(C.colors.navyBlue).font("Helvetica-Bold").fontSize(20)
+         .text(C.card.title, titleX, titleY + 6, {
            width: titleW, align: "center",
          });
 
-      /* ─────────────────────────────────────────────────────────────
-       * 6. Participant info (centered, inside white box)
-       * ───────────────────────────────────────────────────────────── */
+      /* 6. Participant info */
       const infoX = 40;
-      const infoW = pageWidth - 80;
-
-      let cursorY = 320;
+      const infoW = PW - 80;
+      let cy = 326;
 
       if (C.card.fields.name) {
-        doc.fillColor(C.colors.nameText)
-           .font("Helvetica-Bold")
-           .fontSize(26)
-           .text((name || "Participant").toUpperCase(), infoX, cursorY, {
+        doc.fillColor(C.colors.nameText).font("Helvetica-Bold").fontSize(26)
+           .text((name || "Participant").toUpperCase(), infoX, cy, {
              width: infoW, align: "center",
            });
-        cursorY += 40;
+        cy += 40;
       }
 
       if (C.card.fields.designation && designation) {
-        doc.fillColor(C.colors.subText)
-           .font("Helvetica")
-           .fontSize(14)
-           .text(designation, infoX, cursorY, {
-             width: infoW, align: "center",
-           });
-        cursorY += 24;
+        doc.fillColor(C.colors.subText).font("Helvetica").fontSize(14)
+           .text(designation, infoX, cy, { width: infoW, align: "center" });
+        cy += 24;
       }
 
       if (C.card.fields.company && company) {
-        doc.fillColor(C.colors.text)
-           .font("Helvetica-Bold")
-           .fontSize(16)
-           .text(company, infoX, cursorY, {
-             width: infoW, align: "center",
-           });
-        cursorY += 30;
+        doc.fillColor(C.colors.text).font("Helvetica-Bold").fontSize(16)
+           .text(company, infoX, cy, { width: infoW, align: "center" });
+        cy += 30;
       }
 
-      /* ─────────────────────────────────────────────────────────────
-       * 7. Share message
-       * ───────────────────────────────────────────────────────────── */
-      cursorY += 6;
-      doc.fillColor(C.colors.secondary)
-         .font("Helvetica")
-         .fontSize(12)
-         .text(C.card.shareMessage || "", infoX + 20, cursorY, {
+      /* 7. Share message */
+      cy += 8;
+      doc.fillColor("#1f2937").font("Helvetica").fontSize(12)
+         .text(C.card.shareMessage, infoX + 20, cy, {
            width: infoW - 40, align: "center",
          });
-      cursorY = doc.y + 14;
+      cy = doc.y + 18;
 
-      /* ─────────────────────────────────────────────────────────────
-       * 8. In Association with — Rail Chamber logo
-       * ───────────────────────────────────────────────────────────── */
-      doc.fillColor(C.colors.navyBlue)
-         .font("Helvetica-Bold")
-         .fontSize(12)
-         .text("In Association with", 0, cursorY, {
-           width: pageWidth, align: "center",
+      /* 8. In Association with — Rail Chamber logo */
+      doc.fillColor(C.colors.navyBlue).font("Helvetica-Bold").fontSize(12)
+         .text(C.logos.association.label, 0, cy, {
+           width: PW, align: "center",
          });
-      cursorY += 20;
+      cy += 20;
 
-      safeImage(doc, C.logos.association?.file,
-                (pageWidth - 140) / 2, cursorY, 140);
-      cursorY += 100;
+      safeImage(doc, C.logos.association.file, (PW - 130) / 2, cy, 130);
+      cy += 130;
 
-      /* ─────────────────────────────────────────────────────────────
-       * 9. QR — small, centered just above footer
-       * ───────────────────────────────────────────────────────────── */
-      const footerH = 60;
-      const footerY = pageHeight - footerH;
+      /* 9. QR just above footer */
+      const footerH = 62;
+      const footerY = PH - footerH;
 
       if (C.qr?.enabled) {
-        const qrSize = 90;
-        const qrValue = C.qr.value || "https://www.irmaindia.com";
-        const qrBuffer = await getQR(qrValue, qrSize);
+        const qrSize = C.qr.size || 100;
+        const qrBuf = await getQR(C.qr.value, qrSize);
+        const qrX = (PW - qrSize) / 2;
+        const qrY = footerY - qrSize - 14;
 
-        // place QR just above footer, vertically centered inside footer area's upper half
-        const qrX = (pageWidth - qrSize) / 2;
-        const qrY = footerY - qrSize - 12;
-
-        // white rounded backing
-        doc.roundedRect(qrX - 6, qrY - 6, qrSize + 12, qrSize + 12, 8)
+        // white backing so QR is readable over bg        doc.roundedRect(qrX - 6, qrY - 6, qrSize + 12, qrSize + 12, 8)
            .fill("#FFFFFF");
-
-        doc.image(qrBuffer, qrX, qrY, { width: qrSize });
+        doc.image(qrBuf, qrX, qrY, { width: qrSize });
       }
 
-      /* ─────────────────────────────────────────────────────────────
-       * 10. RED FOOTER BAND
-       * ───────────────────────────────────────────────────────────── */
-      doc.rect(0, footerY, pageWidth, footerH).fill(C.colors.footerRed);
+      /* 10. Red footer band */
+      doc.rect(0, footerY, PW, footerH).fill(C.colors.footerRed);
 
-      // Left: SCAN TO REGISTER
-      doc.fillColor("#FFFFFF")
-         .font("Helvetica-Bold")
-         .fontSize(11)
+      doc.fillColor("#FFFFFF").font("Helvetica-Bold").fontSize(11)
          .text("SCAN TO REGISTER", 30, footerY + 14, { width: 200 });
+      doc.fillColor("#FFFFFF").font("Helvetica").fontSize(9)
+         .text(C.card.websiteLabel, 30, footerY + 34, { width: 200 });
 
-      doc.fillColor("#FFFFFF")
-         .font("Helvetica")
-         .fontSize(9)
-         .text("www.railtransexpo.com", 30, footerY + 32, { width: 200 });
-
-      // Right: VISIT OUR WEBSITE
-      doc.fillColor("#FFFFFF")
-         .font("Helvetica-Bold")
-         .fontSize(11)
-         .text("VISIT OUR WEBSITE", pageWidth - 230, footerY + 14, {
+      doc.fillColor("#FFFFFF").font("Helvetica-Bold").fontSize(11)
+         .text("VISIT OUR WEBSITE", PW - 230, footerY + 14, {
            width: 200, align: "center",
          });
-
-      doc.fillColor("#FFFFFF")
-         .font("Helvetica")
-         .fontSize(9)
-         .text("www.irmaindia.com", pageWidth - 230, footerY + 32, {
+      doc.fillColor("#FFFFFF").font("Helvetica").fontSize(9)
+         .text("www.irmaindia.com", PW - 230, footerY + 34, {
            width: 200, align: "center",
          });
 
