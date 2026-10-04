@@ -206,7 +206,7 @@ async function buildTicketEmail({
   const text = [
     `Dear ${name || "Participant"},`,
     "",
-    `Greetings from RailTrans Expo 2026!`,
+    `Greetings from RailTrans Expo 2027!`,
     "",
     introText,
     "",
@@ -226,7 +226,7 @@ async function buildTicketEmail({
     `Venue: ${ev.venue}`,
     "",
     "About the Event:",
-    "RailTrans Expo 2026 is being hosted by Urban Infra Group in association with the Chamber of Railway Industries (Rail Chamber) and supported by the Ministry of Railways, Government of India. The event will bring together leading stakeholders from the railway, transportation, logistics, infrastructure, and semiconductor sectors from across India and around the world.",
+    "RailTrans Expo 2027 is being hosted by Urban Infra Group in association with the Chamber of Railway Industries (Rail Chamber) and supported by the Ministry of Railways, Government of India. The event will bring together leading stakeholders from the railway, transportation, logistics, infrastructure, and semiconductor sectors from across India and around the world.",
     "",
     "Important Visitor Instructions:",
     "",
@@ -238,7 +238,7 @@ async function buildTicketEmail({
     "",
     "3. Visitor e-Badge & Physical Badge Collection",
     "   • All visitors are requested to show their Visitor e-Badge to the security personnel at the venue entry point.",
-    "   • The physical printed Visitor Badge will be issued from the Registration Desk located at the main entrance of RailTrans Expo 2026.",
+    "   • The physical printed Visitor Badge will be issued from the Registration Desk located at the main entrance of RailTrans Expo 2027.",
     "",
     "4. Mandatory Identity Proof",
     "   All visitors must carry a valid government-issued identity proof such as:",
@@ -247,7 +247,7 @@ async function buildTicketEmail({
     "   • Driving License / Voter ID (if applicable)",
     "",
     "5. Venue Protocols & Security Guidelines",
-    "   All visitors are requested to strictly follow the protocols, safety guidelines, and operational norms prescribed by ITPO and the organizers of RailTrans Expo 2026.",
+    "   All visitors are requested to strictly follow the protocols, safety guidelines, and operational norms prescribed by ITPO and the organizers of RailTrans Expo 2027.",
     "",
     "We look forward to welcoming you to Asia's leading exhibition and conference for the railway and transportation industry.",
     "",
@@ -257,10 +257,10 @@ async function buildTicketEmail({
     "🌐 www.railtransexpo.com",
     "",
     "Warm Regards,",
-    "Team RailTrans Expo 2026",
+    "Team RailTrans Expo 2027",
     "Urban Infra Communications Pvt. Ltd.",
     "Bharat Mandapam, New Delhi",
-    "3rd–4th July 2026",
+    "1, 2 & 3 July, 2027",
   ]
     .filter(Boolean)
     .join("\n");
@@ -598,14 +598,14 @@ async function buildTicketEmail({
       <body>
         <div class="container">
           <div class="header">
-            ${resolvedLogo ? `<img src="${resolvedLogo}" alt="RailTrans Expo Logo" class="logo" />` : `<div style="color: white; font-size: 24px; font-weight: bold;">RailTrans Expo 2026</div>`}
+            ${resolvedLogo ? `<img src="${resolvedLogo}" alt="RailTrans Expo Logo" class="logo" />` : `<div style="color: white; font-size: 24px; font-weight: bold;">RailTrans Expo 2027</div>`}
           </div>
     
           <div class="content">
             <div class="greeting">Dear ${name || "Participant"},</div>
     
             <p class="intro">
-              <strong>Greetings from RailTrans Expo 2026!</strong><br/><br/>
+              <strong>Greetings from RailTrans Expo 2027!</strong><br/><br/>
               ${introText}
             </p>
     
@@ -645,9 +645,9 @@ async function buildTicketEmail({
             </div>
     
             <div class="about-section">
-              <div class="about-title">About RailTrans Expo 2026</div>
+              <div class="about-title">About RailTrans Expo 2027</div>
               <p class="about-text">
-                RailTrans Expo 2026 is being hosted by <strong>Urban Infra Group</strong> in association with the <strong>Chamber of Railway Industries (Rail Chamber)</strong> and supported by the <strong>Ministry of Railways, Government of India</strong>. The event will bring together leading stakeholders from the railway, transportation, logistics, infrastructure, and semiconductor sectors from across India and around the world.
+                RailTrans Expo 2027 is being hosted by <strong>Urban Infra Group</strong> in association with the <strong>Chamber of Railway Industries (Rail Chamber)</strong> and supported by the <strong>Ministry of Railways, Government of India</strong>. The event will bring together leading stakeholders from the railway, transportation, logistics, infrastructure, and semiconductor sectors from across India and around the world.
               </p>
             </div>
     
@@ -692,7 +692,7 @@ async function buildTicketEmail({
                   <strong>Visitor e-Badge & Physical Badge Collection:</strong>
                   <ul>
                     <li>All visitors are requested to show their <strong>Visitor e-Badge</strong> to the security personnel at the venue entry point.</li>
-                    <li>The <strong>physical printed Visitor Badge</strong> will be issued from the <strong>Registration Desk</strong> located at the main entrance of RailTrans Expo 2026.</li>
+                    <li>The <strong>physical printed Visitor Badge</strong> will be issued from the <strong>Registration Desk</strong> located at the main entrance of RailTrans Expo 2027.</li>
                   </ul>
                 </li>
                 <li>
@@ -706,7 +706,7 @@ async function buildTicketEmail({
                 </li>
                 <li>
                   <strong>Venue Protocols & Security Guidelines:</strong>
-                  All visitors are requested to strictly follow the protocols, safety guidelines, and operational norms prescribed by <strong>ITPO</strong> and the organizers of <strong>RailTrans Expo 2026</strong>.
+                  All visitors are requested to strictly follow the protocols, safety guidelines, and operational norms prescribed by <strong>ITPO</strong> and the organizers of <strong>RailTrans Expo 2027</strong>.
                 </li>
               </ol>
             </div>
@@ -723,10 +723,10 @@ async function buildTicketEmail({
               
               <p style="margin-top: 20px;">
                 <strong>Warm Regards,</strong><br/>
-                <strong>Team RailTrans Expo 2026</strong><br/>
+                <strong>Team RailTrans Expo 2027</strong><br/>
                 Urban Infra Communications Pvt. Ltd.<br/>
                 Bharat Mandapam, New Delhi<br/>
-                3rd–4th July 2026
+                1, 2 & 3 July, 2027
               </p>
             </div>
           </div>

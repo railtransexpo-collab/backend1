@@ -56,17 +56,21 @@ module.exports = {
   logos: {
     hostedBy: {
       label: "Hosted by",
-      file: path.join(ASSETS_DIR, "urban-infra-group.png"),
+      file: path.join(ASSETS_DIR, "Urban_Infra_Group_Logo-HD.png"),
     },
 
     supportedBy: {
       label: "Supported by",
-      file: path.join(ASSETS_DIR, "ministry-of-railways.png"),
+      file: path.join(ASSETS_DIR, "Indian_Railway_Logo_2.png"),
     },
 
     association: {
-      label: "Association with",
-      file: path.join(ASSETS_DIR, "chamber-logo.png"),
+      label: "In association with",
+      file: path.join(ASSETS_DIR, "railchamber_logo.png"),
+    },
+
+    railtransBrand: {
+      file: path.join(ASSETS_DIR, "railtranslogo.png"),
     },
   },
 

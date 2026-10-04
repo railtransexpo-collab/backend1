@@ -170,7 +170,7 @@ function drawHeader(doc) {
     );
   });
 
-  const monthBlockWidth = 90;
+  const monthBlockWidth = 150;
   const monthBlockX =
     Number.isFinite(dp?.monthX) ? dp.monthX : (C.PAGE.width - monthBlockWidth) / 2;
 
@@ -178,21 +178,12 @@ function drawHeader(doc) {
     .fillColor("#000000")
     .font("Helvetica-Bold")
     .fontSize(18)
-    .text("JULY", monthBlockX, dp.monthY || 78, {
+    .text("JULY 2027", monthBlockX, dp.monthY || 78, {
       width: monthBlockWidth,
       align: "center",
       lineBreak: false,
     });
 
-  doc
-    .fillColor("#000000")
-    .font("Helvetica-Bold")
-    .fontSize(18)
-    .text("2027", monthBlockX, (dp.monthY || 78) + 20, {
-      width: monthBlockWidth,
-      align: "center",
-      lineBreak: false,
-    });
   // Bharat Mandapam logo — top-right
   safeImage(doc, C.MANDAPAM.path, C.MANDAPAM.x, C.MANDAPAM.y, C.MANDAPAM.width);
 

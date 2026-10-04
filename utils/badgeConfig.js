@@ -55,7 +55,7 @@ const MANDAPAM_TEXT = {
 const DATE_PILLS = {
   pill1: { 
     text: "1", 
-    x: 150, 
+    x: 118, 
     y: 40,
     width: 32, 
     height: 32, 
@@ -65,7 +65,7 @@ const DATE_PILLS = {
   },
   pill2: { 
     text: "2", 
-    x: 190, 
+    x: 166, 
     y: 40,
     width: 32, 
     height: 32, 
@@ -75,7 +75,7 @@ const DATE_PILLS = {
   },
   pill3: { 
     text: "3", 
-    x: 230, 
+    x: 214, 
     y: 40,
     width: 32, 
     height: 32, 
@@ -83,8 +83,8 @@ const DATE_PILLS = {
     textColor: "#FFFFFF",
     fontSize: 18 
   },
-  // Centered month block below the date row
-  monthX: 165,
+  // Single-line month year below the date row with more breathing room
+  monthX: 115,
   monthY: 78,
   venueY: 70,
 };

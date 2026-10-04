@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("fs");
+const path = require("path");
 const PDF = require("pdfkit");
 const QRCode = require("qrcode");
 
@@ -105,248 +106,178 @@ async function generateAttendingCardPDF(data = {}) {
       const pageHeight = doc.page.height;
 
       // --------------------------------------------------
-      // Background
+      // Light ticket-style background using the existing bg asset
       // --------------------------------------------------
+      const bgPath = path.join(__dirname, "..", "assets", "bg", "bg.jpeg");
+      if (fs.existsSync(bgPath)) {
+        doc.image(bgPath, 0, 0, { width: pageWidth, height: pageHeight });
+      }
 
       doc
         .rect(0, 0, pageWidth, pageHeight)
-        .fill(C.colors.background);
-
-      // --------------------------------------------------
-      // Border
-      // --------------------------------------------------
+        .fill("rgba(255,255,255,0.18)");
 
       doc
-        .lineWidth(1)
-        .rect(
-          10,
-          10,
-          pageWidth - 20,
-          pageHeight - 20
-        )
-        .stroke(C.colors.border);
+        .roundedRect(18, 18, pageWidth - 36, pageHeight - 36, 18)
+        .fillAndStroke("rgba(255,255,255,0.15)", "#0e4d7d")
+        .lineWidth(2);
 
-      // --------------------------------------------------
-      // RailTrans Logo
-      // --------------------------------------------------
-
-      // Your current config does not define a railtrans logo.
-      // So don't try C.LOGOS.railtrans here.
-      // Add it to config later if required.
-
-      // --------------------------------------------------
-      // Top logos
-      // Hosted by | Association | Supported by
-      // --------------------------------------------------
-
-      if (C.layout?.topLogos?.enabled) {
-        const y = 35;
-
-        safeImage(
-          doc,
-          C.logos.hostedBy?.file,
-          50,
-          y,
-          120
-        );
-
-        safeImage(
-          doc,
-          C.logos.association?.file,
-          (pageWidth - 140) / 2,
-          y,
-          140
-        );
-
-        safeImage(
-          doc,
-          C.logos.supportedBy?.file,
-          pageWidth - 170,
-          y,
-          120
-        );
-      }
-
-      // --------------------------------------------------
-      // Title
-      // --------------------------------------------------
+      // Main RailTrans brand area (replaces the old hosted/supported logos)
+      safeImage(doc, C.logos.railtransBrand?.file, (pageWidth - 260) / 2, 36, 260);
 
       doc
-        .fillColor(C.colors.primary)
+        .fillColor("#0e4d7d")
         .font("Helvetica-Bold")
-        .fontSize(C.pdf.titleFontSize || 22)
-        .text(
-          C.card.title || "ATTENDING CARD",
-          30,
-          125,
-          {
-            width: pageWidth - 60,
-            align: "center",
-          }
-        );
+        .fontSize(16)
+        .text("Driving Regional Rail Connectivity", 0, 170, {
+          width: pageWidth,
+          align: "center",
+        });
 
-      // --------------------------------------------------
+      doc
+        .fillColor("#0e4d7d")
+        .font("Helvetica-Bold")
+        .fontSize(14)
+        .text("TRANSFORMING RAIL TOGETHER", 0, 196, {
+          width: pageWidth,
+          align: "center",
+        });
+
+      doc
+        .fillColor("#0e4d7d")
+        .font("Helvetica-Bold")
+        .fontSize(20)
+        .text(C.event.name || "7th RailTrans Expo 2027", 0, 226, {
+          width: pageWidth,
+          align: "center",
+        });
+
+      // Title bar
+      doc
+        .roundedRect(70, 290, pageWidth - 140, 36, 18)
+        .fillAndStroke("#ffffff", "#0e4d7d")
+        .lineWidth(1.4);
+
+      doc
+        .fillColor("#0e4d7d")
+        .font("Helvetica-Bold")
+        .fontSize(20)
+        .text(C.card.title || "ATTENDING CARD", 0, 296, {
+          width: pageWidth,
+          align: "center",
+        });
+
       // Participant information
-      // --------------------------------------------------
-
-      const participantTop = 180;
+      const participantTop = 345;
 
       if (C.card.fields.name) {
         doc
-          .fillColor(C.colors.text)
+          .fillColor("#0f172a")
           .font("Helvetica-Bold")
-          .fontSize(C.pdf.nameFontSize || 28)
-          .text(
-            name || "Participant",
-            40,
-            participantTop,
-            {
-              width: pageWidth - 80,
-              align: "center",
-            }
-          );
+          .fontSize(28)
+          .text(name || "Participant", 40, participantTop, {
+            width: pageWidth - 80,
+            align: "center",
+          });
       }
 
       if (C.card.fields.designation) {
         doc
-          .fillColor(C.colors.muted)
+          .fillColor("#475569")
           .font("Helvetica")
-          .fontSize(C.pdf.designationFontSize || 16)
-          .text(
-            designation || "",
-            40,
-            participantTop + 50,
-            {
-              width: pageWidth - 80,
-              align: "center",
-            }
-          );
+          .fontSize(16)
+          .text(designation || "", 40, participantTop + 42, {
+            width: pageWidth - 80,
+            align: "center",
+          });
       }
 
       if (C.card.fields.company) {
         doc
-          .fillColor(C.colors.text)
+          .fillColor("#111827")
           .font("Helvetica-Bold")
-          .fontSize(C.pdf.companyFontSize || 17)
-          .text(
-            company || "",
-            40,
-            participantTop + 80,
-            {
-              width: pageWidth - 80,
-              align: "center",
-            }
-          );
+          .fontSize(18)
+          .text(company || "", 40, participantTop + 74, {
+            width: pageWidth - 80,
+            align: "center",
+          });
       }
 
-      // --------------------------------------------------
-      // QR Code
-      // --------------------------------------------------
-
+      // QR block
       if (C.qr?.enabled) {
         const qrSize = C.qr.size || 150;
+        const qrBuffer = await getQR(C.qr.value || ticketCode, qrSize);
 
-        const qrBuffer = await getQR(
-          C.qr.value || ticketCode,
-          qrSize
-        );
+        doc
+          .roundedRect((pageWidth - (qrSize + 28)) / 2, 450, qrSize + 28, qrSize + 28, 12)
+          .fillAndStroke("#f8fafc", "#dfe7ef")
+          .lineWidth(1);
 
-        doc.image(
-          qrBuffer,
-          (pageWidth - qrSize) / 2,
-          315,
-          {
-            width: qrSize,
-          }
-        );
+        doc.image(qrBuffer, (pageWidth - qrSize) / 2, 462, { width: qrSize });
       }
 
-      // --------------------------------------------------
-      // Share message
-      // --------------------------------------------------
-
+      // Message and event details
       doc
-        .fillColor(C.colors.muted)
+        .fillColor("#1f2937")
         .font("Helvetica")
-        .fontSize(C.pdf.messageFontSize || 16)
-        .text(
-          C.card.shareMessage || "",
-          60,
-          485,
-          {
-            width: pageWidth - 120,
-            align: "center",
-          }
-        );
-
-      // --------------------------------------------------
-      // Website
-      // --------------------------------------------------
+        .fontSize(14)
+        .text(C.card.shareMessage || "", 52, 630, {
+          width: pageWidth - 104,
+          align: "center",
+        });
 
       doc
-        .fillColor(C.colors.primary)
+        .fillColor("#0e4d7d")
         .font("Helvetica-Bold")
-        .fontSize(C.pdf.websiteFontSize || 12)
-        .text(
-          C.card.websiteLabel ||
-            C.event.website ||
-            "",
-          40,
-          535,
-          {
-            width: pageWidth - 80,
-            align: "center",
-          }
-        );
-
-      // --------------------------------------------------
-      // Event details
-      // --------------------------------------------------
+        .fontSize(12)
+        .text("www.railtransexpo.com", 0, 678, {
+          width: pageWidth,
+          align: "center",
+        });
 
       doc
-        .fillColor(C.colors.secondary)
+        .fillColor("#1f2937")
         .font("Helvetica")
+        .fontSize(12)
+        .text(`${C.event.name}\n${C.event.dates}\n${C.event.venue}`, 0, 700, {
+          width: pageWidth,
+          align: "center",
+          lineGap: 4,
+        });
+
+      // Association section and chamber logo
+      doc
+        .fillColor("#0e4d7d")
+        .font("Helvetica-Bold")
         .fontSize(11)
-        .text(
-          `${C.event.name}\n${C.event.dates}\n${C.event.venue}`,
-          40,
-          565,
-          {
-            width: pageWidth - 80,
-            align: "center",
-            lineGap: 4,
-          }
-        );
+        .text("In association with", 0, 788, {
+          width: pageWidth,
+          align: "center",
+        });
 
-      // --------------------------------------------------
-      // Bottom logos
-      // --------------------------------------------------
+      safeImage(doc, C.logos.association?.file, (pageWidth - 120) / 2, 803, 120);
 
-      const bottomY = pageHeight - 100;
+      // Footer red band
+      const footerY = pageHeight - 58;
+      doc.rect(0, footerY, pageWidth, 58).fill("#d61b2a");
 
-      safeImage(
-        doc,
-        C.logos.hostedBy?.file,
-        50,
-        bottomY,
-        100
-      );
+      doc
+        .fillColor("#ffffff")
+        .font("Helvetica-Bold")
+        .fontSize(13)
+        .text("SCAN TO REGISTER", 40, footerY + 16, { width: 180 });
 
-      safeImage(
-        doc,
-        C.logos.association?.file,
-        (pageWidth - 100) / 2,
-        bottomY,
-        100
-      );
+      doc
+        .fillColor("#ffffff")
+        .font("Helvetica-Bold")
+        .fontSize(13)
+        .text("VISIT OUR WEBSITE", pageWidth - 220, footerY + 16, { width: 180, align: "center" });
 
-      safeImage(
-        doc,
-        C.logos.supportedBy?.file,
-        pageWidth - 150,
-        bottomY,
-        100
-      );
+      doc
+        .fillColor("#ffffff")
+        .font("Helvetica")
+        .fontSize(10)
+        .text("www.railtransexpo.com", pageWidth - 200, footerY + 36, { width: 160, align: "center" });
 
       doc.end();
 

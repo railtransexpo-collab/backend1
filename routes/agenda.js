@@ -63,7 +63,7 @@ router.get("/", async (req, res) => {
         success: true, 
         data: { 
           title: "Program Agenda", 
-          description: "Download the program agenda for 6th RailTrans Expo 2026",
+          description: "Download the program agenda for 6th RailTrans Expo 2027",
           fileUrl: null,
           fileName: null,
           fileSize: null,
@@ -80,7 +80,7 @@ router.get("/", async (req, res) => {
       success: true,
       data: {
         title: agenda.title || "Program Agenda",
-        description: agenda.description || "Download the program agenda for 6th RailTrans Expo 2026",
+        description: agenda.description || "Download the program agenda for 6th RailTrans Expo 2027",
         fileUrl: fileUrl,
         fileName: agenda.fileName,
         fileSize: agenda.fileSize,
@@ -116,7 +116,7 @@ router.post("/upload", upload.single("agendaFile"), async (req, res) => {
     const agendaData = {
       type: "program_agenda",
       title: title || "Program Agenda",
-      description: description || "Download the program agenda for 6th RailTrans Expo 2026",
+      description: description || "Download the program agenda for 6th RailTrans Expo 2027",
       filePath: file.path,
       fileName: file.originalname,
       fileSize: stats.size,
@@ -143,7 +143,7 @@ router.post("/upload", upload.single("agendaFile"), async (req, res) => {
         fileName: file.originalname,
         fileSize: stats.size,
         title: title || "Program Agenda",
-        description: description || "Download the program agenda for 6th RailTrans Expo 2026"
+        description: description || "Download the program agenda for 6th RailTrans Expo 2027"
       }
     });
   } catch (error) {
