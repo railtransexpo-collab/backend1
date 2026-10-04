@@ -693,13 +693,22 @@ router.get("/:id/download-badge", async (req, res) => {
       return res.status(500).json({ success: false, error: "Database not ready" });
     }
 
-    const id = req.params.id;
+    const requestedId = req.params.id || req.query.id || req.body?.id || req.body?.record || req.body;
+    const id = typeof requestedId === "object" ? requestedId._id || requestedId.ticket_code || requestedId.id : requestedId;
     const oid = toObjectId(id);
-    if (!oid) {
-      return res.status(400).json({ success: false, error: "Invalid ID" });
+    let doc = null;
+
+    if (oid) {
+      doc = await db.collection("speakers").findOne({ _id: oid });
     }
 
-    const doc = await db.collection("speakers").findOne({ _id: oid });
+    if (!doc && id) {
+      doc = await db.collection("speakers").findOne({ ticket_code: String(id) });
+    }
+
+    if (!doc) {
+      return res.status(400).json({ success: false, error: "Invalid ID" });
+    }
     if (!doc) {
       return res.status(404).json({ success: false, error: "Speaker not found" });
     }

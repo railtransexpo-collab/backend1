@@ -56,7 +56,6 @@ function safeImage(doc, filePath, x, y, width, extraOpts = {}) {
       try {
         doc.image(p, x, y, {
           width,
-          width,
           compress: true,
           quality: 0.7,
           ...extraOpts,
@@ -170,6 +169,7 @@ function drawHeader(doc) {
     );
   });
 
+  // Month text centered under the three pills
   const monthBlockWidth = 160;
   const monthBlockX =
     Number.isFinite(dp?.monthX) ? dp.monthX : (C.PAGE.width - monthBlockWidth) / 2;
@@ -187,13 +187,12 @@ function drawHeader(doc) {
   // Bharat Mandapam logo — top-right
   safeImage(doc, C.MANDAPAM.path, C.MANDAPAM.x, C.MANDAPAM.y, C.MANDAPAM.width);
 
-  // Venue — 2 lines under Mandapam logo (explicit Y; no overlap)
+  // Venue — 2 lines under Mandapam logo
   const mt = C.MANDAPAM_TEXT || {};
-  const venueX = Number(C?.MANDAPAM?.x) || (dp?.monthX ?? 0);
-  const venueW =
-    Number(C?.MANDAPAM?.width) || Math.max(40, rightLimit - (dp?.monthX ?? 0));
+  const venueX = Number(C?.MANDAPAM?.x) || 0;
+  const venueW = Number(C?.MANDAPAM?.width) || 85;
 
-  const baseY = Number(mt.y) || (dp?.venueY ?? 0);
+  const baseY = Number(mt.y) || 60;
 
   doc
     .fillColor(mt.color || "#555555")
@@ -209,7 +208,6 @@ function drawHeader(doc) {
     width: venueW,
     align: "center",
   });
-  // "NEW DELHI, INDIA" should be below and in same font style
   doc
     .fillColor(mt.color || "#555555")
     .font("Helvetica-Bold")
@@ -268,7 +266,6 @@ function drawBodyBackground(doc) {
 async function drawQRCard(doc, ticketCode, entity, mode, name, company) {
   const qc = C.QR_CARD;
 
-  // Generate QR code with larger size
   const qrPayload =
     mode === "scan"
       ? ticketCode
@@ -276,19 +273,16 @@ async function drawQRCard(doc, ticketCode, entity, mode, name, company) {
   const qrBuf = await getCachedQR(qrPayload, C.QR.size * 2);
 
   const qrX = qc.x + (qc.width - C.QR.size) / 2;
-  const qrY = qc.y + 20; // Adjusted for larger QR
+  const qrY = qc.y + 20;
   doc.image(qrBuf, qrX, qrY, { width: C.QR.size });
 
-  // Calculate text starting position
   const textStartY = qrY + C.QR.size + (Number(C?.TEXT_AREA?.gapAfterQr) || 15);
 
-  // Draw NAME - BOLDER AND BIGGER
   doc
     .fillColor("#000")
     .font("Helvetica-Bold")
     .fontSize(C.TEXT_AREA.nameFontSize);
 
-  // Calculate name height
   const nameHeight = doc.heightOfString(name, {
     width: qc.width - 30,
     align: "center",
@@ -299,7 +293,6 @@ async function drawQRCard(doc, ticketCode, entity, mode, name, company) {
     align: "center",
   });
 
-  // Draw COMPANY - BOLDER AND BIGGER
   if (
     company &&
     company.trim() !== "" &&
@@ -307,8 +300,8 @@ async function drawQRCard(doc, ticketCode, entity, mode, name, company) {
     company !== "NULL"
   ) {
     doc
-      .fillColor("#333") // Darker for better contrast
-      .font("Helvetica-Bold") // Make company bold too
+      .fillColor("#333")
+      .font("Helvetica-Bold")
       .fontSize(C.TEXT_AREA.companyFontSize);
 
     const companyY = textStartY + nameHeight + 2;
@@ -321,15 +314,25 @@ async function drawQRCard(doc, ticketCode, entity, mode, name, company) {
   }
 }
 
+// ── UPDATED FOOTER: Left = CRI logo, Right = Organised By + Urban Infra ──────
 function drawFooter(doc) {
   const org = C.ORGANISED_BY;
-  const centerX = C.PAGE.width / 2;
+  const cri = C.CRI_LOGO;
 
+  // ── LEFT SIDE: Chamber of Railway Industries logo ──
+  if (cri && cri.path) {
+    safeImage(doc, cri.path, cri.x, cri.y, cri.width);
+  }
+
+  // ── RIGHT SIDE: ORGANISED BY pill + Urban Infra logo ──
+  // Center the label over the right-half logo area
   doc.font("Helvetica-Bold").fontSize(org.labelFontSize);
-  const labelWidth = doc.widthOfString(org.label) + 50;
+  const labelTextWidth = doc.widthOfString(org.label);
+  const labelPillWidth = labelTextWidth + 50;
 
-  const labelX = centerX - labelWidth / 2;
-  const labelY = 412;
+  // Position label so it sits above the right-side logo, roughly centered
+  const labelX = org.logoX + (org.logoWidth - labelPillWidth) / 2;
+  const labelY = org.labelY;
 
   drawPill(
     doc,
@@ -343,12 +346,8 @@ function drawFooter(doc) {
     20,
   );
 
-  // LOGO (perfect center + spacing)
-  const logoWidth = 120;
-  const logoX = centerX - logoWidth / 2;
-  const logoY = labelY + 22;
-
-  safeImage(doc, org.logoPath, logoX, logoY, logoWidth);
+  // Urban Infra logo — right side
+  safeImage(doc, org.logoPath, org.logoX, org.logoY, org.logoWidth);
 }
 
 function drawRibbon(doc, themeColor, ribbonLabel) {
@@ -397,27 +396,22 @@ async function generateScanBadgePDF(data) {
       const W = 220;
       const H = 300;
 
-      // Enable compression for faster delivery
       const doc = new PDF({ size: [W, H], margin: 0, compress: true });
       const buffers = [];
       doc.on("data", (b) => buffers.push(b));
       doc.on("end", () => resolve(Buffer.concat(buffers)));
 
-      // Background
       doc.rect(0, 0, W, H).fill("#FFFFFF");
 
-      // Outer blue border
       doc.roundedRect(6, 6, W - 12, H - 12, 8).stroke("#1B3A8A");
 
-      // QR Code - use cached version with smaller multiplier
       const qrSize = 130;
       const qrX = (W - qrSize) / 2;
       const qrY = 20;
 
-      const qrBuf = await getCachedQR(ticketCode, qrSize * 2); // 2x instead of 4x
+      const qrBuf = await getCachedQR(ticketCode, qrSize * 2);
       doc.image(qrBuf, qrX, qrY, { width: qrSize });
 
-      // Divider
       const divY = qrY + qrSize + 16;
       doc
         .moveTo(24, divY)
@@ -425,7 +419,6 @@ async function generateScanBadgePDF(data) {
         .lineWidth(0.5)
         .stroke("#CCCCCC");
 
-      // Name
       const nameY = divY + 14;
       doc.fillColor("#1B3A8A").font("Helvetica-Bold").fontSize(14);
 
@@ -439,7 +432,6 @@ async function generateScanBadgePDF(data) {
         lineBreak: true,
       });
 
-      // Company
       if (company) {
         doc.fillColor("#444444").font("Helvetica-Bold").fontSize(8.5);
         doc.text(company, 14, nameY + nameH + 5, {
@@ -456,22 +448,20 @@ async function generateScanBadgePDF(data) {
     }
   });
 }
+
 async function generateBadgePDF(entity, data, options = {}) {
   const { mode = "email" } = options;
 
-  // ── Scan mode: return lightweight card (QR + name + company only) ──
   if (mode === "scan") {
     return generateScanBadgePDF(data);
   }
 
-  // ── All other modes: full branded badge ──
   return new Promise(async (resolve, reject) => {
     try {
       const ticketCode =
         data?.ticket_code || data?.ticketCode || data?.data?.ticket_code;
       if (!ticketCode) throw new Error("ticket_code missing");
 
-      // Payment signals vary by collection/flow; treat any positive ticket amount as paid.
       const paidAmount =
         Number(data.amount) ||
         Number(data.amount_paid) ||
@@ -510,7 +500,6 @@ async function generateBadgePDF(entity, data, options = {}) {
       doc.on("data", (b) => buffers.push(b));
       doc.on("end", () => resolve(Buffer.concat(buffers)));
 
-      // Draw all sections
       doc
         .rect(0, C.TOP_STRIP.y, C.PAGE.width, C.TOP_STRIP.height)
         .fill(themeColor);
@@ -518,7 +507,6 @@ async function generateBadgePDF(entity, data, options = {}) {
       drawTagline(doc);
       drawBodyBackground(doc);
 
-      // Enhanced name extraction
       const name = (
         data.name ||
         data.full_name ||
@@ -529,7 +517,6 @@ async function generateBadgePDF(entity, data, options = {}) {
         .trim()
         .toUpperCase();
 
-      // Enhanced company extraction
       let company = (
         data.company ||
         data.organization ||
@@ -548,7 +535,6 @@ async function generateBadgePDF(entity, data, options = {}) {
         .trim()
         .toUpperCase();
 
-      // Remove any "null" or "undefined" strings
       if (company === "NULL" || company === "UNDEFINED" || company === "") {
         company = "";
       }
@@ -567,4 +553,4 @@ async function generateBadgePDF(entity, data, options = {}) {
   });
 }
 
-module.exports = { generateBadgePDF,generateScanBadgePDF };
+module.exports = { generateBadgePDF, generateScanBadgePDF };

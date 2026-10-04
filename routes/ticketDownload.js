@@ -26,6 +26,31 @@ async function obtainDb() {
   }
 }
 
+function resolveRecordId(input) {
+  if (!input) return null;
+
+  if (typeof input === "string") {
+    const value = input.trim();
+    return value || null;
+  }
+
+  if (typeof input === "object") {
+    const candidate =
+      input._id ||
+      input.id ||
+      input.ticket_code ||
+      input.ticketCode ||
+      input.data?._id ||
+      input.data?.ticket_code ||
+      input.data?.ticketCode;
+
+    if (!candidate) return null;
+    return String(candidate);
+  }
+
+  return String(input);
+}
+
 /**
  * ✅ Changed to query params to match frontend/email usage
  * 
@@ -36,14 +61,16 @@ router.get("/", async (req, res) => {
     console.log("[ticketDownload] Request:", req.query);
 
     const { entity, id } = req.query;
+    const bodyId = req.body && typeof req.body === "object" ? req.body.id || req.body._id || req.body.ticket_code || req.body.ticketCode || req.body.record : null;
+    const resolvedId = resolveRecordId(id || bodyId || req.body || null);
 
     // Validate required params
-    if (!entity || !id) {
-      console.error("[ticketDownload] Missing params:", { entity, id });
+    if (!entity || !resolvedId) {
+      console.error("[ticketDownload] Missing params:", { entity, id, bodyId, resolvedId });
       return res.status(400).json({ 
         error: "Missing required parameters",
         required: ["entity", "id"],
-        received: { entity:  !!entity, id: !!id }
+        received: { entity:  !!entity, id: !!resolvedId }
       });
     }
 
@@ -73,7 +100,7 @@ router.get("/", async (req, res) => {
     }
 
     // Accept either Mongo _id OR ticket_code (6-digit etc.). Prefer _id when valid.
-    const idStr = String(id);
+    const idStr = String(resolvedId);
     const isObjectId = ObjectId.isValid(idStr);
 
     const db = await obtainDb();
@@ -85,7 +112,7 @@ router.get("/", async (req, res) => {
     const collectionName = collectionMap[entityKey];
     const collection = db.collection(collectionName);
 
-    console.log("[ticketDownload] Finding document:", { entity: entityKey, id, collection: collectionName });
+    console.log("[ticketDownload] Finding document:", { entity: entityKey, id: idStr, collection: collectionName });
 
     let doc;
     try {

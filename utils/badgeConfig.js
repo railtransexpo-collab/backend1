@@ -7,8 +7,6 @@ const PAGE = { width: 400, height: 570 };
 const ASSETS_BG   = path.join(__dirname, "..", "assets", "bg");
 const ASSETS_LOGO = path.join(__dirname, "..", "assets", "logos");
 
-
-
 // ─── Top Strip ───────────────────────────────────────────────────────────────
 const TOP_STRIP = { y: 0, height: 12 };
 
@@ -30,10 +28,8 @@ const RAILTRANS_LOGO = {
 // Bharat Mandapam logo — top-right (INCREASED SIZE)
 const MANDAPAM = {
   path:  path.join(ASSETS_LOGO, "bharat_mandapam.png"),
-  // Drop it slightly to avoid sticking to the top edge
-  // Keep it in the far-right column so it never overlaps the date/month text
   width: 85,
-  x:     PAGE.width - 85-12,
+  x:     PAGE.width - 85 - 12,
   y:     18,
 };
 
@@ -41,21 +37,22 @@ const MANDAPAM = {
 const MANDAPAM_TEXT = {
   line1: "BHARAT MANDAPAM",
   line2: "NEW DELHI, INDIA",
-  // Explicit Y so it never overwrites the logo
   y: 60,
   fontSizeLine1: 8.2,
   fontSizeLine2: 8.2,
-  lineGap: 2,     // gap between line1 and line2
+  lineGap: 2,
   color: "#555555",
 };
 
-// REMOVED: EDITION_PILL - No longer showing "6th EDITION"
-
-// Date Pills (03 and 04 with WHITE text on RED background)
+// Date Pills (1, 2, 3) — CENTERED with JULY 2027
+// The three pills together form a group; we center the whole group.
+// Group width = 32 + gap + 32 + gap + 32 = 32*3 + 2*gap
+// Let's use gap = 16 => group width = 96 + 32 = 128
+// Center of page = 200. Group start x = 200 - 128/2 = 136
 const DATE_PILLS = {
   pill1: { 
     text: "1", 
-    x: 118, 
+    x: 136, 
     y: 40,
     width: 32, 
     height: 32, 
@@ -65,7 +62,7 @@ const DATE_PILLS = {
   },
   pill2: { 
     text: "2", 
-    x: 166, 
+    x: 184, 
     y: 40,
     width: 32, 
     height: 32, 
@@ -75,7 +72,7 @@ const DATE_PILLS = {
   },
   pill3: { 
     text: "3", 
-    x: 214, 
+    x: 232, 
     y: 40,
     width: 32, 
     height: 32, 
@@ -83,8 +80,9 @@ const DATE_PILLS = {
     textColor: "#FFFFFF",
     fontSize: 18 
   },
-  // Keep the month text centered under the date row and away from the Mandapam block.
-  monthX: 118,
+  // Month text centered under the date pills group
+  // Group center = 136 + 128/2 = 200
+  monthX: 136,      // same as pill1 x for width-based centering
   monthY: 76,
   venueY: 70,
 };
@@ -131,29 +129,36 @@ const TEXT_AREA = {
   companyY:        380,
   nameFontSize:    16, 
   companyFontSize: 12,
-  // Extra spacing so name/company sit a bit lower
   gapAfterQr:      22,
 };
 
-// ─── Footer Logos with INCREASED SIZES and REDUCED WHITESPACE ─────────────────
-const ORGANISED_BY = {
-  label:          "ORGANISED BY",
-  labelX:         20,
-  labelY:         405,
-  labelBgColor:   "#1B3A8A",
-  labelTextColor: "#FFFFFF",
-  labelFontSize:  9,        // INCREASED font size
-  logoPath:       path.join(ASSETS_LOGO, "Urban_Infra_Group_Logo-HD.png"),
-  logoX:          20,
-  logoY:          418,
-  logoWidth:      130,      // INCREASED width
+// ─── Footer: Left (CRI) + Right (Organised By) ──────────────────────────────
+// Left side: Chamber of Railway Industries logo
+const CRI_LOGO = {
+  path:  path.join(ASSETS_LOGO, "cri_logo.png"),   // you'll need to add this asset
+  x:     20,
+  y:     418,
+  width: 80,
 };
 
+// Right side: "ORGANISED BY" label + Urban Infra logo
+const ORGANISED_BY = {
+  label:          "ORGANISED BY",
+  labelBgColor:   "#1B3A8A",
+  labelTextColor: "#FFFFFF",
+  labelFontSize:  9,
+  // Right side positioning
+  labelX:         240,       // right half
+  labelY:         405,
+  logoPath:       path.join(ASSETS_LOGO, "Urban_Infra_Group_Logo-HD.png"),
+  logoX:          220,       // right half, centered under label
+  logoY:          418,
+  logoWidth:      130,
+};
 
-
-// RIBBON - Reduced whitespace below
+// ─── Ribbon ──────────────────────────────────────────────────────────────────
 const RIBBON = {
-  y: 510,           // MOVED UP (was 510) - reduces whitespace
+  y: 510,
   height: 60,
   textSize: 32,
   borderRadius: 20,
@@ -173,6 +178,7 @@ module.exports = {
   QR_CARD,
   QR,
   TEXT_AREA,
+  CRI_LOGO,
   ORGANISED_BY,
   RIBBON,
   ASSETS_BG,
