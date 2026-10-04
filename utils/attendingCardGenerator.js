@@ -119,17 +119,35 @@ async function generateAttendingCardPDF(data = {}) {
 
       doc
         .roundedRect(18, 18, pageWidth - 36, pageHeight - 36, 18)
-        .fillAndStroke("rgba(255,255,255,0.15)", "#0e4d7d")
-        .lineWidth(2);
+        .fillAndStroke("rgba(255,255,255,0.08)", "#0e4d7d")
+        .lineWidth(2.2);
 
-      // Main RailTrans brand area (replaces the old hosted/supported logos)
-      safeImage(doc, C.logos.railtransBrand?.file, (pageWidth - 260) / 2, 36, 260);
+      // Top row logos
+      doc
+        .fillColor("#0e4d7d")
+        .font("Helvetica-Bold")
+        .fontSize(9)
+        .text("Hosted by", 58, 38, { width: 90, align: "center" });
+
+      doc
+        .fillColor("#0e4d7d")
+        .font("Helvetica-Bold")
+        .fontSize(9)
+        .text("Supported by", pageWidth - 150, 38, { width: 100, align: "center" });
+
+      if (C.layout?.topLogos?.enabled) {
+        safeImage(doc, C.logos.hostedBy?.file, 54, 52, 110);
+        safeImage(doc, C.logos.supportedBy?.file, pageWidth - 170, 52, 108);
+      }
+
+      // Main RailTrans logo and text
+      safeImage(doc, C.logos.railtransBrand?.file, (pageWidth - 270) / 2, 90, 270);
 
       doc
         .fillColor("#0e4d7d")
         .font("Helvetica-Bold")
         .fontSize(16)
-        .text("Driving Regional Rail Connectivity", 0, 170, {
+        .text("Driving Regional Rail Connectivity", 0, 200, {
           width: pageWidth,
           align: "center",
         });
@@ -138,7 +156,7 @@ async function generateAttendingCardPDF(data = {}) {
         .fillColor("#0e4d7d")
         .font("Helvetica-Bold")
         .fontSize(14)
-        .text("TRANSFORMING RAIL TOGETHER", 0, 196, {
+        .text("TRANSFORMING RAIL TOGETHER", 0, 224, {
           width: pageWidth,
           align: "center",
         });
@@ -147,7 +165,7 @@ async function generateAttendingCardPDF(data = {}) {
         .fillColor("#0e4d7d")
         .font("Helvetica-Bold")
         .fontSize(20)
-        .text(C.event.name || "7th RailTrans Expo 2027", 0, 226, {
+        .text(C.event.name || "7th RailTrans Expo 2027", 0, 250, {
           width: pageWidth,
           align: "center",
         });
@@ -168,7 +186,7 @@ async function generateAttendingCardPDF(data = {}) {
         });
 
       // Participant information
-      const participantTop = 345;
+      const participantTop = 350;
 
       if (C.card.fields.name) {
         doc
@@ -203,17 +221,18 @@ async function generateAttendingCardPDF(data = {}) {
           });
       }
 
-      // QR block
+      // Small QR at the bottom, as in the reference card
       if (C.qr?.enabled) {
-        const qrSize = C.qr.size || 150;
-        const qrBuffer = await getQR(C.qr.value || ticketCode, qrSize);
+        const qrSize = C.qr.size || 120;
+        const qrValue = C.qr.value || "https://www.irmaindia.com";
+        const qrBuffer = await getQR(qrValue, qrSize);
 
         doc
-          .roundedRect((pageWidth - (qrSize + 28)) / 2, 450, qrSize + 28, qrSize + 28, 12)
+          .roundedRect((pageWidth - (qrSize + 28)) / 2, 615, qrSize + 28, qrSize + 28, 12)
           .fillAndStroke("#f8fafc", "#dfe7ef")
           .lineWidth(1);
 
-        doc.image(qrBuffer, (pageWidth - qrSize) / 2, 462, { width: qrSize });
+        doc.image(qrBuffer, (pageWidth - qrSize) / 2, 627, { width: qrSize });
       }
 
       // Message and event details
@@ -221,7 +240,7 @@ async function generateAttendingCardPDF(data = {}) {
         .fillColor("#1f2937")
         .font("Helvetica")
         .fontSize(14)
-        .text(C.card.shareMessage || "", 52, 630, {
+        .text(C.card.shareMessage || "", 52, 520, {
           width: pageWidth - 104,
           align: "center",
         });
@@ -230,7 +249,7 @@ async function generateAttendingCardPDF(data = {}) {
         .fillColor("#0e4d7d")
         .font("Helvetica-Bold")
         .fontSize(12)
-        .text("www.railtransexpo.com", 0, 678, {
+        .text(C.card.websiteLabel || "www.irmaindia.com", 0, 557, {
           width: pageWidth,
           align: "center",
         });
@@ -239,7 +258,7 @@ async function generateAttendingCardPDF(data = {}) {
         .fillColor("#1f2937")
         .font("Helvetica")
         .fontSize(12)
-        .text(`${C.event.name}\n${C.event.dates}\n${C.event.venue}`, 0, 700, {
+        .text(`${C.event.name}\n${C.event.dates}\n${C.event.venue}`, 0, 575, {
           width: pageWidth,
           align: "center",
           lineGap: 4,
@@ -250,12 +269,12 @@ async function generateAttendingCardPDF(data = {}) {
         .fillColor("#0e4d7d")
         .font("Helvetica-Bold")
         .fontSize(11)
-        .text("In association with", 0, 788, {
+        .text("In Association with", 0, 780, {
           width: pageWidth,
           align: "center",
         });
 
-      safeImage(doc, C.logos.association?.file, (pageWidth - 120) / 2, 803, 120);
+      safeImage(doc, C.logos.association?.file, (pageWidth - 130) / 2, 795, 130);
 
       // Footer red band
       const footerY = pageHeight - 58;
@@ -277,7 +296,7 @@ async function generateAttendingCardPDF(data = {}) {
         .fillColor("#ffffff")
         .font("Helvetica")
         .fontSize(10)
-        .text("www.railtransexpo.com", pageWidth - 200, footerY + 36, { width: 160, align: "center" });
+        .text("www.irmaindia.com", pageWidth - 200, footerY + 36, { width: 160, align: "center" });
 
       doc.end();
 

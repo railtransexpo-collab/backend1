@@ -83,9 +83,9 @@ const DATE_PILLS = {
     textColor: "#FFFFFF",
     fontSize: 18 
   },
-  // Single-line month year below the date row with more breathing room
-  monthX: 115,
-  monthY: 78,
+  // Keep the month text centered under the date row and away from the Mandapam block.
+  monthX: 118,
+  monthY: 76,
   venueY: 70,
 };
 

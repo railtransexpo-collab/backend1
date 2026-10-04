@@ -81,8 +81,8 @@ module.exports = {
    */
   qr: {
     enabled: true,
-    value: "https://www.railtransexpo.com",
-    size: 150,
+    value: "https://www.irmaindia.com",
+    size: 120,
     margin: 0,
     errorCorrectionLevel: "M",
   },

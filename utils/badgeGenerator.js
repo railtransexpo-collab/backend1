@@ -170,7 +170,7 @@ function drawHeader(doc) {
     );
   });
 
-  const monthBlockWidth = 150;
+  const monthBlockWidth = 160;
   const monthBlockX =
     Number.isFinite(dp?.monthX) ? dp.monthX : (C.PAGE.width - monthBlockWidth) / 2;
 
@@ -178,7 +178,7 @@ function drawHeader(doc) {
     .fillColor("#000000")
     .font("Helvetica-Bold")
     .fontSize(18)
-    .text("JULY 2027", monthBlockX, dp.monthY || 78, {
+    .text("JULY 2027", monthBlockX, dp.monthY || 76, {
       width: monthBlockWidth,
       align: "center",
       lineBreak: false,
