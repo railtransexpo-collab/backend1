@@ -198,7 +198,8 @@ async function generateAttendingCardPDF(data = {}) {
         const qrX = (PW - qrSize) / 2;
         const qrY = footerY - qrSize - 14;
 
-        // white backing so QR is readable over bg        doc.roundedRect(qrX - 6, qrY - 6, qrSize + 12, qrSize + 12, 8)
+        // White backing keeps the QR readable over the background.
+        doc.roundedRect(qrX - 6, qrY - 6, qrSize + 12, qrSize + 12, 8)
            .fill("#FFFFFF");
         doc.image(qrBuf, qrX, qrY, { width: qrSize });
       }
